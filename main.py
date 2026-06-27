@@ -193,7 +193,7 @@ def get_posts_using_tags(tags:str) -> List[str]:
 					break
 				except Exception as e:
 					if attempt == MAX_RETRY_ATTEMPTS:
-						log.error(f"  [red]Fatal error scraping page {page_id+1}. Stopping search and returning {len(file_urls)} urls. Cause: {e}[/red]")
+						console.print(f"  [red]Fatal error scraping page {page_id+1}. Stopping search and returning {len(file_urls)} urls. Cause: {e}[/red]")
 						return file_urls
 						raise Exception("TODO")
 					else:
@@ -205,7 +205,7 @@ def get_posts_using_tags(tags:str) -> List[str]:
 			# TERMINATION STATE
 			# Gelbooru limits you to page_id 0 to 200
 			if page_id==20000/100:
-				console.print(f"{prepadding}[yellow]Reached Gelbooru limit of 20100 posts deep.[/yellow]")
+				console.print(f"{prepadding}[yellow]Gathered Gelbooru limit of 20100 posts deep.[/yellow]")
 				break
 			# In case reach end and no urls are returned
 			if len(urls) == 0:
