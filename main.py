@@ -1,5 +1,5 @@
 import logging
-from typing import List
+from typing import Callable, List
 from bs4 import BeautifulSoup
 from requests import sessions
 import json
@@ -12,11 +12,11 @@ from rich.logging import RichHandler
 from rich import print
 from rich.progress import Progress
 from rich.console import Console
-
+from requests.models import Response
 # ----- USER CONFIGURABLE SETTINGS ----------------------------------------
 
 ROOT_SAVE_DIRECTORY:pathlib.Path = pathlib.Path("IMAGES2")
-MAX_DOWNLOAD_ATTEMPTS = 5
+MAX_RETRY_ATTEMPTS = 5
 prepadding = "    "
 
 
@@ -96,7 +96,7 @@ def download_file_urls(file_urls:List[str],_image_save_folder:pathlib.Path):
 				f" | [{aborted_color}]{len(aborted_urls)}[/{aborted_color}] aborted |"
 			)
 
-			for download_attempt in range(1,MAX_DOWNLOAD_ATTEMPTS+1):
+			for download_attempt in range(1,MAX_RETRY_ATTEMPTS+1):
 				try:
 					# SKIP FILE IF IT ALREADY EXISTS
 					if filepath.exists():
@@ -107,7 +107,7 @@ def download_file_urls(file_urls:List[str],_image_save_folder:pathlib.Path):
 						break
 
 					# DOWNLOAD IF FILE DOESNT EXIST
-					progress.update(task, description=f"{prepadding}{process_indicator} Downloading [steel_blue1]{file_url}[/steel_blue1] to [steel_blue1]{filepath}[/steel_blue1]")
+					progress.update(task, description=f"{prepadding}{process_indicator} Downloading [steel_blue1]{file_url.replace("https://","")}[/steel_blue1] to [steel_blue1]{filepath}[/steel_blue1]")
 					res = s.get(f"{file_url}")
 					res.raise_for_status()
 					if not pathlib.Path(image_save_folder).exists(): os.makedirs(image_save_folder,exist_ok=True)
@@ -117,12 +117,12 @@ def download_file_urls(file_urls:List[str],_image_save_folder:pathlib.Path):
 						time.sleep(.100)
 						break
 				except Exception as e:
-					if download_attempt == MAX_DOWNLOAD_ATTEMPTS:
-						progress.print(f"{prepadding}[red]Download attempt {download_attempt}/{MAX_DOWNLOAD_ATTEMPTS} FAILED for {file_url}. ABORTING DOWNLOAD. Info: {e}[/red]")
+					if download_attempt == MAX_RETRY_ATTEMPTS:
+						progress.print(f"{prepadding}[red]Download attempt {download_attempt}/{MAX_RETRY_ATTEMPTS} FAILED for {file_url}. ABORTING DOWNLOAD. Info: {e}[/red]")
 						aborted_urls.append(file_url)
 					else:
-						sleep_time = 1+.250*download_attempt**3
-						progress.print(f"{prepadding}[yellow]Download attempt {download_attempt}/{MAX_DOWNLOAD_ATTEMPTS} FAILED for {file_url}. Retrying download in {sleep_time:.1f}s...[/yellow]")
+						sleep_time = 1 + (.25*download_attempt**3)
+						progress.print(f"{prepadding}[yellow]Download attempt {download_attempt}/{MAX_RETRY_ATTEMPTS} FAILED for {file_url}. Retrying download in {sleep_time:.1f}s...[/yellow]")
 						time.sleep(sleep_time)
 				
 			progress.advance(task, advance=1)		
@@ -135,6 +135,19 @@ def download_file_urls(file_urls:List[str],_image_save_folder:pathlib.Path):
 		log.info(f"{prepadding}⚠️  Successfully downloaded [red]{len(successful_urls)}[/red]/[steel_blue1]{len(file_urls)}[/steel_blue1] files. [red]{len(aborted_urls)}[/red] files failed to download. [steel_blue1]{len(already_downloaded_urls)}[/steel_blue1] files were already downloaded")
 
 
+# def safe_request(url:str,success_cb:Callable[[Response]],max_retries:int=MAX_RETRY_ATTEMPTS):
+# 	for attempt in range(1,max_retries+1):
+# 		try:
+# 			response = s.get(url)
+# 			response.raise_for_status()
+
+			
+# 		except Exception as e:
+# 			if attempt == max_retries:
+
+# 			else:
+
+
 def get_posts_using_tags(tags:str) -> List[str]:
 	FORMATABLE_URL = (
 		"https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1"
@@ -143,36 +156,72 @@ def get_posts_using_tags(tags:str) -> List[str]:
 		"&pid={page_id}"
 	)
 	file_urls:List[str] = []
+	urls = []
 
 	page_id=0
-	total_number_of_posts = ""
+	total_number_of_posts = None
 	with console.status(f"  Finding file urls...") as status:
 		while True:
-			if not total_number_of_posts=="": status.update(f"  Finding file urls... [steel_blue1]{len(file_urls)}[/steel_blue1]/[steel_blue1]{total_number_of_posts}[/steel_blue1]")
-			
-			try:
-				response = s.get(FORMATABLE_URL.format(tags=tags,page_id=page_id))
-				response.raise_for_status()
+			# Indicate progress
+			if not total_number_of_posts is None:
+				warning_text = "[yellow]WARNING: Gelbooru prevents searches more than 20100 posts deep. Only the first 20100 posts will be scraped![/yellow]" if total_number_of_posts>=20100 else ""
+				status.update(f"  Finding file urls... [steel_blue1]{len(file_urls)}[/steel_blue1]/[steel_blue1]{total_number_of_posts}[/steel_blue1] found. {warning_text}")
 
-				str_data = response.text
-				data = json.loads(str_data)
-				
-				urls:List[str] = [post["file_url"] for post in data["post"]]
-				file_urls.extend(urls)
 
-				# TERMINATION STATE
-				total_number_of_posts = data["@attributes"]["count"]
-				if len(file_urls) == total_number_of_posts:
+			for attempt in range(1,MAX_RETRY_ATTEMPTS+1):
+				try:
+					response = s.get(FORMATABLE_URL.format(tags=tags,page_id=page_id))
+					response.raise_for_status()
+
+					# Parse Data
+					data = response.json()
+
+					# Validate Data
+					if "@attributes" not in data:
+						raise Exception("ERROR: `@attributes` not in data")
+						return file_urls 
+					if "post" not in data:
+						raise Exception("ERROR: `post` not in data")
+						return file_urls 
+
+					# Extract Data
+					urls = [post["file_url"] for post in data["post"]]
+					file_urls.extend(urls)
+
+					total_number_of_posts = int(data["@attributes"]["count"])
+
 					break
+				except Exception as e:
+					if attempt == MAX_RETRY_ATTEMPTS:
+						log.error(f"  [red]Fatal error scraping page {page_id+1}. Stopping search and returning {len(file_urls)} urls. Cause: {e}[/red]")
+						return file_urls
+						raise Exception("TODO")
+					else:
+						sleep_time = 1 + (attempt * 3)
+						# Update the status spinner to show the warning!
+						status.update(f"  [yellow]Error on page {page_id+1}. Retrying {attempt}/{MAX_RETRY_ATTEMPTS} in {sleep_time}s...[/yellow]")
+						time.sleep(sleep_time)
+			
+			# TERMINATION STATE
+			# Gelbooru limits you to page_id 0 to 200
+			if page_id==20000/100:
+				console.print(f"{prepadding}[yellow]Reached Gelbooru limit of 20100 posts deep.[/yellow]")
+				break
+			# In case reach end and no urls are returned
+			if len(urls) == 0:
+				break
+			# In case API returns different total_number_of_posts due to content being removed
+			if total_number_of_posts is not None and len(file_urls) >= total_number_of_posts:
+				break
 
-				# PREPARE FOR NEXT ITERATION
-				page_id+=1
-				time.sleep(.200)
-			except Exception as e:
-				raise Exception(e)
+			# Setup for next iteration
+			page_id+=1
+			time.sleep(.2)
+
 	return file_urls
 
 searchs_to_download = [
+	"blue_archive+sort%3ascore"
 ]
 
 for i, search in enumerate(searchs_to_download):
