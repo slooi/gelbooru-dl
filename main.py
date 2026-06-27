@@ -42,7 +42,7 @@ log = logging.getLogger(__name__)
 # ----- SETUP VARS ----------------------------------------
 
 console = Console()
-config = dotenv_values(".env") 
+config = dotenv_values(".gelbooru-dl.env") 
 API_CODES = config["API_CODES"]
 
 # ----- MAIN CODE ----------------------------------------
