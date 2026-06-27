@@ -15,8 +15,9 @@ from rich.console import Console
 from requests.models import Response
 # ----- USER CONFIGURABLE SETTINGS ----------------------------------------
 
-ROOT_SAVE_DIRECTORY:pathlib.Path = pathlib.Path("IMAGES2")
+ROOT_SAVE_DIRECTORY:pathlib.Path = pathlib.Path("IMGS")
 MAX_RETRY_ATTEMPTS = 5
+DEFAULT_EXCLUDE_TAGS = "+-yaoi+-furry"
 prepadding = "    "
 
 
@@ -69,8 +70,12 @@ s.headers.update({
 })
 
 
-def download_file_urls(file_urls:List[str],_image_save_folder:pathlib.Path):
-	image_save_folder = pathlib.Path(_image_save_folder)
+def download_file_urls(file_urls:List[str],_media_save_folder:pathlib.Path):
+	if len(file_urls) == 0:
+		log.info(f"{prepadding}[yellow]⚠️  0 urls were found! Can not scrape media![/yellow]")
+		return
+	
+	media_save_folder = pathlib.Path(_media_save_folder)
 
 	# cache
 	num_of_file_urls = len(file_urls)
@@ -84,7 +89,7 @@ def download_file_urls(file_urls:List[str],_image_save_folder:pathlib.Path):
 		task = progress.add_task("[steel_blue1]Preparing downloads...", total=num_of_file_urls)
 		
 		for i, file_url in enumerate(file_urls):
-			filepath = image_save_folder / pathlib.Path(file_url).name
+			filepath = media_save_folder / pathlib.Path(file_url).name
 
 			# CALCULATE UI VARIABLES
 			colored_fraction = f"[steel_blue1]{len(successful_urls)}[/steel_blue1]/[steel_blue1]{num_of_file_urls}[/steel_blue1]"
@@ -110,7 +115,7 @@ def download_file_urls(file_urls:List[str],_image_save_folder:pathlib.Path):
 					progress.update(task, description=f"{prepadding}{process_indicator} Downloading [steel_blue1]{file_url.replace("https://","")}[/steel_blue1] to [steel_blue1]{filepath}[/steel_blue1]")
 					res = s.get(f"{file_url}")
 					res.raise_for_status()
-					if not pathlib.Path(image_save_folder).exists(): os.makedirs(image_save_folder,exist_ok=True)
+					if not pathlib.Path(media_save_folder).exists(): os.makedirs(media_save_folder,exist_ok=True)
 					with open(filepath,"wb") as f:
 						f.write(res.content)
 						successful_urls.append(file_url)
@@ -118,10 +123,10 @@ def download_file_urls(file_urls:List[str],_image_save_folder:pathlib.Path):
 						break
 				except Exception as e:
 					if download_attempt == MAX_RETRY_ATTEMPTS:
-						progress.print(f"{prepadding}[red]Download attempt {download_attempt}/{MAX_RETRY_ATTEMPTS} FAILED for {file_url}. ABORTING DOWNLOAD. Info: {e}[/red]")
+						progress.print(f"{prepadding}[red]Download attempt {download_attempt}/{MAX_RETRY_ATTEMPTS} FAILED for {file_url}. ABORTING DOWNLOAD. Cause: {e}[/red]")
 						aborted_urls.append(file_url)
 					else:
-						sleep_time = 1 + (.25*download_attempt**3)
+						sleep_time = 1 + (download_attempt**2)
 						progress.print(f"{prepadding}[yellow]Download attempt {download_attempt}/{MAX_RETRY_ATTEMPTS} FAILED for {file_url}. Retrying download in {sleep_time:.1f}s...[/yellow]")
 						time.sleep(sleep_time)
 				
@@ -129,7 +134,7 @@ def download_file_urls(file_urls:List[str],_image_save_folder:pathlib.Path):
 			
 	
 	if len(aborted_urls) == 0:
-		log.info(f"{prepadding}✅ Successfully downloaded [green]{len(successful_urls)}[/green]/[steel_blue1]{len(file_urls)}[/steel_blue1] files. [green]{len(aborted_urls)}[/green] files failed to download. [steel_blue1]{len(already_downloaded_urls)}[/steel_blue1] files were already downloaded")
+		log.info(f"{prepadding}✅ Downloaded [green]{len(successful_urls)}[/green]/[steel_blue1]{len(file_urls)}[/steel_blue1] files ([steel_blue1]{len(already_downloaded_urls)}[/steel_blue1] already existed). [green]{len(aborted_urls)}[/green] files failed to download.")
 	else:
 		log.info(f"{prepadding}The following files failed to download:\n[red]{"\n".join([f"{prepadding*2}❌ {url}" for url in aborted_urls])}[/red]")
 		log.info(f"{prepadding}⚠️  Successfully downloaded [red]{len(successful_urls)}[/red]/[steel_blue1]{len(file_urls)}[/steel_blue1] files. [red]{len(aborted_urls)}[/red] files failed to download. [steel_blue1]{len(already_downloaded_urls)}[/steel_blue1] files were already downloaded")
@@ -149,10 +154,13 @@ def download_file_urls(file_urls:List[str],_image_save_folder:pathlib.Path):
 
 
 def get_posts_using_tags(tags:str) -> List[str]:
+	if tags == "": raise Exception("ERROR: no tags given")
+
 	FORMATABLE_URL = (
 		"https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1"
 		f"&{API_CODES}"
 		"&tags={tags}"
+		f"{DEFAULT_EXCLUDE_TAGS}"
 		"&pid={page_id}"
 	)
 	file_urls:List[str] = []
@@ -179,10 +187,16 @@ def get_posts_using_tags(tags:str) -> List[str]:
 					# Validate Data
 					if "@attributes" not in data:
 						raise Exception("ERROR: `@attributes` not in data")
-						return file_urls 
+					if "count" not in data["@attributes"]:
+						raise Exception("ERROR: `count` not in data")
 					if "post" not in data:
+						if data["@attributes"]["count"] == 0:
+							if page_id == 0:
+								console.print(f"{prepadding}[red]🚨 Error no posts found. Are you sure your tags: [bold]{tags}[/bold] exists?[/red]")
+							else:
+								console.print(f"{prepadding}[red]🚨 Error no post content found on page {page_id+1}. Stopping search and returning 0 urls. Are you sure your tags: [bold]{tags}[/bold] exists?[/red]")
+							return file_urls
 						raise Exception("ERROR: `post` not in data")
-						return file_urls 
 
 					# Extract Data
 					urls = [post["file_url"] for post in data["post"]]
@@ -193,13 +207,13 @@ def get_posts_using_tags(tags:str) -> List[str]:
 					break
 				except Exception as e:
 					if attempt == MAX_RETRY_ATTEMPTS:
-						console.print(f"  [red]Fatal error scraping page {page_id+1}. Stopping search and returning {len(file_urls)} urls. Cause: {e}[/red]")
+						console.print(f"{prepadding}[red]Error scraping page {page_id+1}. Attempt {attempt}/{MAX_RETRY_ATTEMPTS}. Stopping search and returning {len(file_urls)} urls. Cause: {e}[/red]")
 						return file_urls
 						raise Exception("TODO")
 					else:
-						sleep_time = 1 + (attempt * 3)
+						sleep_time = 1 + (attempt ** 2)
 						# Update the status spinner to show the warning!
-						status.update(f"  [yellow]Error on page {page_id+1}. Retrying {attempt}/{MAX_RETRY_ATTEMPTS} in {sleep_time}s...[/yellow]")
+						console.print(f"{prepadding}[yellow]Error scraping page {page_id+1}. Attempt {attempt}/{MAX_RETRY_ATTEMPTS}. Retrying in {sleep_time}s...[/yellow]")
 						time.sleep(sleep_time)
 			
 			# TERMINATION STATE
@@ -221,11 +235,10 @@ def get_posts_using_tags(tags:str) -> List[str]:
 	return file_urls
 
 searchs_to_download = [
-	"blue_archive+sort%3ascore"
 ]
 
 for i, search in enumerate(searchs_to_download):
 	search = search.strip()
-	log.info(f"[steel_blue1]{i+1}[/steel_blue1]/[steel_blue1]{len(searchs_to_download)}[/steel_blue1] | Search: [steel_blue1]{search}[/steel_blue1]")
+	log.info(f"[[steel_blue1]{i+1}[/steel_blue1]/[steel_blue1]{len(searchs_to_download)}[/steel_blue1]] [steel_blue1]{search}[/steel_blue1]")
 	file_urls = get_posts_using_tags(search)
-	download_file_urls(file_urls=file_urls,_image_save_folder=ROOT_SAVE_DIRECTORY/search)
+	download_file_urls(file_urls=file_urls,_media_save_folder=ROOT_SAVE_DIRECTORY/search)
