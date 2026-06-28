@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 from typing import Callable, Dict, List, Tuple, TypedDict
 from bs4 import BeautifulSoup
 from requests import sessions
@@ -86,13 +87,14 @@ async def download_file(file_url:str,file_urls:List[str],media_save_folder:pathl
 
 
 	filepath = media_save_folder / pathlib.Path(file_url).name
-	message = f"Downloading [steel_blue1]{file_url.replace("https://","")}[/steel_blue1] to [steel_blue1]{filepath}[/steel_blue1]"
+	message = f"Downloading [steel_blue1]{file_url.replace("https://","")}[/steel_blue1] to [steel_blue1]{filepath.parent}[/steel_blue1]"
 
 	def get_indicator():
 			colored_fraction = f"[steel_blue1]{len(successful_urls)}[/steel_blue1]/[steel_blue1]{num_of_file_urls}[/steel_blue1]"
+			percentage_done = f"([steel_blue1]{math.floor((len(successful_urls)+len(aborted_urls))/len(file_urls)*100)}%[/steel_blue1])"
 			aborted_color = "steel_blue1" if len(aborted_urls)==0 else "red" 
 			return (
-				f"{colored_fraction} downloaded"
+				f"{colored_fraction} {percentage_done} downloaded"
 				f" | [{aborted_color}]{len(aborted_urls)}[/{aborted_color}] aborted |"
 			)
 	def update_progress_bar_text():
