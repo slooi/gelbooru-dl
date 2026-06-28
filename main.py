@@ -28,12 +28,13 @@ from rich.progress import (
 	TimeRemainingColumn,
 	DownloadColumn
 )
+import argparse
 # ----- USER CONFIGURABLE SETTINGS ----------------------------------------
 
-ROOT_SAVE_DIRECTORY:pathlib.Path = pathlib.Path("IMGS4")
+ROOT_SAVE_DIRECTORY:pathlib.Path = pathlib.Path("gelbooru-dl")
 MAX_DL_ATTEMPTS = 7
 DEFAULT_EXCLUDE_TAGS = "+-yaoi+-furry"
-prepadding = "   "
+prepadding = "    "
 MAX_CONCURRENT_REQUESTS = 8
 
 # ----- LOGGING SETUP ----------------------------------------
@@ -58,7 +59,10 @@ log = logging.getLogger(__name__)
 # ----- SETUP VARS ----------------------------------------
 
 console = Console()
-config = dotenv_values(".gelbooru-dl.env") 
+ENV_PATH = pathlib.Path.home() / ".gelbooru-dl.env"
+config = dotenv_values(ENV_PATH)
+if not "API_CODES" in config:
+	raise Exception(F"ERROR: Could not find key 'API_CODES' in {ENV_PATH}")
 API_CODES = config["API_CODES"]
 custom_timeout = aiohttp.ClientTimeout(total=None, sock_read=60)
 
@@ -234,12 +238,15 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 
 	page_id=0
 	total_number_of_posts = None
+	has_given_warning = False
 	with console.status(f"  Finding file urls...") as status:
 		while True:
 			# Indicate progress
 			if not total_number_of_posts is None:
-				warning_text = "[yellow]WARNING: Gelbooru prevents searches more than 20100 posts deep. Only the first 20100 posts will be scraped![/yellow]" if total_number_of_posts>=20100 else ""
-				status.update(f"  Finding file urls... [steel_blue1]{len(file_urls)}[/steel_blue1]/[steel_blue1]{total_number_of_posts}[/steel_blue1] found. {warning_text}")
+				if total_number_of_posts>=20100 and not has_given_warning:
+					has_given_warning = True
+					console.print(f"{prepadding}[yellow]WARNING: Gelbooru prevents searches more than 20100 posts deep. Only the first 20100 posts will be scraped![/yellow]")
+				status.update(f"  Finding file urls... [steel_blue1]{len(file_urls)}[/steel_blue1]/[steel_blue1]{total_number_of_posts}[/steel_blue1] found.")
 
 
 			for attempt in range(1,MAX_DL_ATTEMPTS+1):
