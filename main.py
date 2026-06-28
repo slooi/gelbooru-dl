@@ -284,7 +284,7 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 			
 			# TERMINATION STATE
 			# Gelbooru limits you to page_id 0 to 200
-			if page_id==20000/100:
+			if page_id==200:
 				console.print(f"{prepadding}[yellow]Gathered Gelbooru limit of 20100 posts deep.[/yellow]")
 				break
 			# In case reach end and no urls are returned
@@ -303,17 +303,7 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 searchs_to_download = [
 ]
 
-# for i, search in enumerate(searchs_to_download):
-# 	search = search.strip()
-# 	log.info(f"[[steel_blue1]{i+1}[/steel_blue1]/[steel_blue1]{len(searchs_to_download)}[/steel_blue1]] [steel_blue1]{search}[/steel_blue1]")
-# 	file_urls = get_posts_using_tags(search)
-# 	download_files(file_urls=file_urls,_media_save_folder=ROOT_SAVE_DIRECTORY/search)
-
-
-
 async def main():
-	
-
 	async with aiohttp.ClientSession(headers=headers) as session:
 		for i, search in enumerate(searchs_to_download):
 			search = search.strip()
