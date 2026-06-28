@@ -201,25 +201,23 @@ async def download_files(file_urls:List[str],_media_save_folder:pathlib.Path,ses
 		await asyncio.gather(*atasks)
 			
 	
-	if len(aborted_urls) == 0:
-		log.info(f"{prepadding}✅ Downloaded [green]{len(successful_urls)}[/green]/[steel_blue1]{len(file_urls)}[/steel_blue1] files ([steel_blue1]{len(already_downloaded_urls)}[/steel_blue1] already existed). [green]{len(aborted_urls)}[/green] files failed to download.")
-	else:
-		log.info(f"{prepadding}The following files failed to download:\n[red]{"\n".join([f"{prepadding*2}❌ {url}" for url in aborted_urls])}[/red]")
-		log.info(f"{prepadding}⚠️  Downloaded [red]{len(successful_urls)}[/red]/[steel_blue1]{len(file_urls)}[/steel_blue1] files ([steel_blue1]{len(already_downloaded_urls)}[/steel_blue1] already existed). [red]{len(aborted_urls)}[/red] files failed to download.")
 
-
-# def safe_request(url:str,success_cb:Callable[[Response]],max_retries:int=MAX_DL_ATTEMPTS):
-# 	for attempt in range(1,max_retries+1):
-# 		try:
-# 			response = s.get(url)
-# 			response.raise_for_status()
-
-			
-# 		except Exception as e:
-# 			if attempt == max_retries:
-
-# 			else:
-
+	SUMMARY_MESSAGE = (
+		f"{prepadding}"
+		"{symbol}Downloaded [{color}]{successful_downloads_num}[/{color}]/[steel_blue1]{total_url_num}[/steel_blue1] files"
+		" ([steel_blue1]{new_downloads_num}[/steel_blue1] new, [steel_blue1]{already_downloaded_num}[/steel_blue1] already existed)."
+		" [{color}]{aborted_num}[/{color}] files failed to download."
+	)
+	if len(aborted_urls) > 0: log.info(f"{prepadding}The following files failed to download:\n[red]{"\n".join([f"{prepadding*2}❌ {url}" for url in aborted_urls])}[/red]")
+	log.info(SUMMARY_MESSAGE.format(
+		symbol="✅ " if len(aborted_urls) == 0 else "⚠️  ",
+		color="green" if len(aborted_urls) == 0 else "red",
+		successful_downloads_num=len(successful_urls),
+		total_url_num=len(file_urls),
+		new_downloads_num=len(successful_urls)-len(already_downloaded_urls),
+		already_downloaded_num=len(already_downloaded_urls),
+		aborted_num=len(aborted_urls)
+	))
 
 async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[str]:
 	if tags == "": raise Exception("ERROR: no tags given")
