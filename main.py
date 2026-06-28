@@ -248,8 +248,6 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 				try:
 					async with session.get(FORMATABLE_URL.format(tags=tags,page_id=page_id),timeout=custom_timeout) as res:
 						res.raise_for_status()
-					# response = s.get(FORMATABLE_URL.format(tags=tags,page_id=page_id))
-					# response.raise_for_status()
 
 						# Parse Data
 						data = await res.json()
@@ -277,13 +275,13 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 						break
 				except Exception as e:
 					if attempt == MAX_DL_ATTEMPTS:
-						console.print(f"{prepadding}[red]Error scraping page {page_id+1}. Attempt {attempt}/{MAX_DL_ATTEMPTS}. Stopping search and returning {len(file_urls)} urls. Cause: {repr(e)}[/red]")
+						console.print(f"{prepadding}[red]Scraping attempt {attempt}/{MAX_DL_ATTEMPTS} FAILED for page {page_id+1}. Stopping search and returning {len(file_urls)} urls. Cause: {repr(e)}[/red]")
 						return file_urls
 						raise Exception("TODO")
 					else:
 						sleep_time = 1 + ((1+attempt) ** 2)
 						# Update the status spinner to show the warning!
-						console.print(f"{prepadding}[yellow]Error scraping page {page_id+1}. Attempt {attempt}/{MAX_DL_ATTEMPTS}. Retrying in {sleep_time}s...[/yellow]")
+						console.print(f"{prepadding}[yellow]Scraping attempt {attempt}/{MAX_DL_ATTEMPTS} FAILED for page {page_id+1}. Retrying in {sleep_time}s...[/yellow]")
 						await asyncio.sleep(sleep_time)
 			
 			# TERMINATION STATE
