@@ -17,14 +17,23 @@ from rich.console import Console
 from requests.models import Response
 import aiohttp
 import time
-
-
+from rich.live import Live
+from rich.console import Group
+from rich.progress import (
+	Progress, 
+	TaskID, 
+	TextColumn, 
+	BarColumn, 
+	TaskProgressColumn, 
+	TimeRemainingColumn,
+	DownloadColumn
+)
 # ----- USER CONFIGURABLE SETTINGS ----------------------------------------
 
-ROOT_SAVE_DIRECTORY:pathlib.Path = pathlib.Path("IMGS3")
+ROOT_SAVE_DIRECTORY:pathlib.Path = pathlib.Path("IMGS4")
 MAX_DL_ATTEMPTS = 7
 DEFAULT_EXCLUDE_TAGS = "+-yaoi+-furry"
-prepadding = "    "
+prepadding = "   "
 MAX_CONCURRENT_REQUESTS = 8
 
 # ----- LOGGING SETUP ----------------------------------------
@@ -75,34 +84,16 @@ headers = {
 s = sessions.Session()
 s.headers.update(headers)
 
-class DownloadInfo(TypedDict):
-    url: str
-    message: str
 	
 semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
-async def download_file(file_url:str,file_urls:List[str],media_save_folder:pathlib.Path,successful_urls:List[str],aborted_urls:List[str],already_downloaded_urls:List[str],currently_downloading_info:List[str],progress:Progress,task:TaskID,session:aiohttp.ClientSession):
-	# cache
-	num_of_file_urls = len(file_urls)
-	indicator_width = len(str(num_of_file_urls))*2+1
-
-
+async def download_file(file_url:str,media_save_folder:pathlib.Path,successful_urls:List[str],aborted_urls:List[str],already_downloaded_urls:List[str],progress:Progress,main_task:TaskID,session:aiohttp.ClientSession):
 	filepath = media_save_folder / pathlib.Path(file_url).name
 	message = f"Downloading [steel_blue1]{file_url.replace("https://","")}[/steel_blue1] to [steel_blue1]{filepath.parent}[/steel_blue1]"
 
-	def get_indicator():
-			colored_fraction = f"[steel_blue1]{len(successful_urls)}[/steel_blue1]/[steel_blue1]{num_of_file_urls}[/steel_blue1]"
-			percentage_done = f"([steel_blue1]{math.floor((len(successful_urls)+len(aborted_urls))/len(file_urls)*100)}%[/steel_blue1])"
-			aborted_color = "steel_blue1" if len(aborted_urls)==0 else "red" 
-			return (
-				f"{colored_fraction} {percentage_done} downloaded"
-				f" | [{aborted_color}]{len(aborted_urls)}[/{aborted_color}] aborted |"
-			)
-	def update_progress_bar_text():
-		if len(currently_downloading_info)>0:
-			progress.update(task, description=f"{prepadding}{get_indicator()} {currently_downloading_info[-1]}")
 	is_dling = False
 
 	async with semaphore:
+		file_task = None # Task for individual file progress
 		for download_attempt in range(1,MAX_DL_ATTEMPTS+1):
 			part_filepath = None
 			try:
@@ -110,38 +101,34 @@ async def download_file(file_url:str,file_urls:List[str],media_save_folder:pathl
 				if filepath.exists():
 					successful_urls.append(file_url)
 					already_downloaded_urls.append(file_url)
-					# progress.update(task, description=f"{prepadding}{get_indicator()} [cyan]Skipping (exists): {filepath}[/cyan]")
-					# log.info(f"{get_indicator()} [steel_blue1]{filepath}[/steel_blue1] already exists. Skipping...")
 					break
 
-				# DOWNLOAD IF FILE DOESNT EXIST
-				if not is_dling:
-					is_dling = True
-					currently_downloading_info.append(message)
-				update_progress_bar_text()
-				# progress.update(task, description=f"{prepadding}{get_indicator()} {message}")
-				
+				# DOWNLOAD IF FILE DOESNT EXIST				
 				async with session.get(file_url,timeout=custom_timeout) as res:
 					res.raise_for_status()
 
-				# res = s.get(f"{file_url}")
-				# res.raise_for_status()
-					if not pathlib.Path(media_save_folder).exists(): os.makedirs(media_save_folder,exist_ok=True)
+					# Create file_task with progress bar for this file
+					if file_task is not None: progress.remove_task(file_task)
+					file_size = int(res.headers.get('Content-Length', 0)) or None
+					file_task = progress.add_task(
+						f"{prepadding}  Downloading [steel_blue1]{file_url}[/steel_blue1]", 
+						total=file_size
+					)
 
+					# Validate parent folder exists
+					if not pathlib.Path(media_save_folder).exists(): os.makedirs(media_save_folder,exist_ok=True)
 
 					# Download as a .part file first
 					part_filepath = filepath.with_name(filepath.name + ".part")
 					with open(part_filepath,"wb") as f:
-						# 2. Increased chunk size to 64KB for better I/O performance
 						async for chunk in res.content.iter_chunked(16777216):
 							f.write(chunk)
-					# 3. Rename the .part file to the final filename ONLY when 100% complete
+							# Update the byte progress!
+							progress.update(file_task, advance=len(chunk))
+					# Rename the .part file to the final filename ONLY when 100% complete
 					part_filepath.replace(filepath)
 
 					successful_urls.append(file_url)
-					update_progress_bar_text()
-					# progress.update(task, description=f"{prepadding}{get_indicator()} Downloading [steel_blue1]{currently_downloading_info[-1]["url"].replace("https://","")}[/steel_blue1] to [steel_blue1]{filepath}[/steel_blue1]")
-
 					await asyncio.sleep(.100)
 					break
 			except Exception as e:
@@ -150,18 +137,24 @@ async def download_file(file_url:str,file_urls:List[str],media_save_folder:pathl
 					part_filepath.unlink() # Deletes the file
 				
 				if download_attempt == MAX_DL_ATTEMPTS:
-					progress.print(f"{prepadding}[red]Download attempt {download_attempt}/{MAX_DL_ATTEMPTS} FAILED for {file_url}. ABORTING DOWNLOAD. Cause: {repr(e)}[/red]")
+					console.print(f"{prepadding}[red]Download attempt {download_attempt}/{MAX_DL_ATTEMPTS} FAILED for {file_url}. ABORTING DOWNLOAD. Cause: {repr(e)}[/red]")
 					aborted_urls.append(file_url)
 				else:
 					sleep_time = 1 + ((1+download_attempt) ** 2)
-					progress.print(f"{prepadding}[yellow]Download attempt {download_attempt}/{MAX_DL_ATTEMPTS} FAILED for {file_url}. Retrying download in {sleep_time:.1f}s...[/yellow]")
+					console.print(f"{prepadding}[yellow]Download attempt {download_attempt}/{MAX_DL_ATTEMPTS} FAILED for {file_url}. Retrying download in {sleep_time:.1f}s...[/yellow]")
 					await asyncio.sleep(sleep_time)
 
-		if message in currently_downloading_info:
-			currently_downloading_info.remove(message) # wait, is this even safe? when  usin async
-		update_progress_bar_text()
+		# Clean up progress bar after downloading/aborting file
+		if file_task is not None:
+			progress.remove_task(file_task)
 
-		progress.advance(task, advance=1)	
+		# Update the main overall progress bar text and advance it
+		aborted_color = "steel_blue1" if len(aborted_urls) == 0 else "red"
+		new_desc = (
+			f"{prepadding} [steel_blue1]{len(successful_urls)}[/steel_blue1]/[steel_blue1]{progress.tasks[main_task].total}[/steel_blue1] downloaded | "
+			f"[{aborted_color}]{len(aborted_urls)}[/{aborted_color}] aborted"
+		)
+		progress.update(main_task, description=new_desc, advance=1)
 	
 async def download_files(file_urls:List[str],_media_save_folder:pathlib.Path,session:aiohttp.ClientSession):
 	if len(file_urls) == 0:
@@ -177,23 +170,32 @@ async def download_files(file_urls:List[str],_media_save_folder:pathlib.Path,ses
 	successful_urls = []
 	aborted_urls = []
 	already_downloaded_urls = []
-	currently_downloading_info:List[str] = []
+
+	# 1. Create the Progress object WITHOUT a 'with' statement
+	progress = Progress(
+		TextColumn("[progress.description]{task.description}"),
+		BarColumn(),
+		TaskProgressColumn(),
+		TimeRemainingColumn(),
+	)
+	# 2. Create your Header string (No progress bar will be attached to this)
+	header = f"{prepadding}Saving to: [steel_blue1]{media_save_folder}[/steel_blue1]"
+	# 3. Group the header and the progress bars together
+	render_group = Group(header, progress)
 	
-	with Progress(console=console, transient=True) as progress:
-		task = progress.add_task("[steel_blue1]Preparing downloads...", total=num_of_file_urls)
-		
+	# 4. Use Live() to render the group. transient=True erases everything when done!
+	with Live(render_group, console=console, transient=True):
+		main_task = progress.add_task(f"{prepadding} 0/{num_of_file_urls} downloaded | 0 aborted", total=num_of_file_urls)
 		
 		atasks = [asyncio.create_task(download_file(
 			file_url=file_url,
-			file_urls=file_urls,
 			media_save_folder=media_save_folder,
 			
 			successful_urls=successful_urls,
 			aborted_urls=aborted_urls,
 			already_downloaded_urls=already_downloaded_urls,
-			currently_downloading_info=currently_downloading_info,
 			progress=progress,
-			task=task,
+			main_task=main_task,
 			session=session
 		)) for i, file_url in enumerate(file_urls)]
 		await asyncio.gather(*atasks)
