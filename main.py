@@ -20,11 +20,11 @@ import time
 
 # ----- USER CONFIGURABLE SETTINGS ----------------------------------------
 
-ROOT_SAVE_DIRECTORY:pathlib.Path = pathlib.Path("IMGS2")
+ROOT_SAVE_DIRECTORY:pathlib.Path = pathlib.Path("IMGS3")
 MAX_DL_ATTEMPTS = 7
 DEFAULT_EXCLUDE_TAGS = "+-yaoi+-furry"
 prepadding = "    "
-
+MAX_CONCURRENT_REQUESTS = 8
 
 # ----- LOGGING SETUP ----------------------------------------
 
@@ -78,7 +78,7 @@ class DownloadInfo(TypedDict):
     url: str
     message: str
 	
-semaphore = asyncio.Semaphore(10)
+semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 async def download_file(file_url:str,file_urls:List[str],media_save_folder:pathlib.Path,successful_urls:List[str],aborted_urls:List[str],already_downloaded_urls:List[str],currently_downloading_info:List[str],progress:Progress,task:TaskID,session:aiohttp.ClientSession):
 	# cache
 	num_of_file_urls = len(file_urls)
@@ -90,11 +90,9 @@ async def download_file(file_url:str,file_urls:List[str],media_save_folder:pathl
 
 	def get_indicator():
 			colored_fraction = f"[steel_blue1]{len(successful_urls)}[/steel_blue1]/[steel_blue1]{num_of_file_urls}[/steel_blue1]"
-			visible_length = len(f"{len(successful_urls)}/{num_of_file_urls}")
-			padding_spaces = " " * (indicator_width - visible_length)
 			aborted_color = "steel_blue1" if len(aborted_urls)==0 else "red" 
 			return (
-				f"{colored_fraction}{padding_spaces} downloaded"
+				f"{colored_fraction} downloaded"
 				f" | [{aborted_color}]{len(aborted_urls)}[/{aborted_color}] aborted |"
 			)
 	def update_progress_bar_text():
@@ -160,8 +158,6 @@ async def download_file(file_url:str,file_urls:List[str],media_save_folder:pathl
 		if message in currently_downloading_info:
 			currently_downloading_info.remove(message) # wait, is this even safe? when  usin async
 		update_progress_bar_text()
-		# if len(currently_downloading_info) > 0:
-		# 	progress.update(task, description=f"{prepadding}{get_indicator()} Downloading [steel_blue1]{currently_downloading_info[-1]["url"].replace("https://","")}[/steel_blue1] to [steel_blue1]{filepath}[/steel_blue1]")
 
 		progress.advance(task, advance=1)	
 	
@@ -205,7 +201,7 @@ async def download_files(file_urls:List[str],_media_save_folder:pathlib.Path,ses
 	SUMMARY_MESSAGE = (
 		f"{prepadding}"
 		"{symbol}Downloaded [{color}]{successful_downloads_num}[/{color}]/[steel_blue1]{total_url_num}[/steel_blue1] files"
-		" ([steel_blue1]{new_downloads_num}[/steel_blue1] new, [steel_blue1]{already_downloaded_num}[/steel_blue1] already existed)."
+		"([steel_blue1]{new_downloads_num}[/steel_blue1] new, [steel_blue1]{already_downloaded_num}[/steel_blue1] already existed)."
 		" [{color}]{aborted_num}[/{color}] files failed to download."
 	)
 	if len(aborted_urls) > 0: log.info(f"{prepadding}The following files failed to download:\n[red]{"\n".join([f"{prepadding*2}❌ {url}" for url in aborted_urls])}[/red]")
@@ -258,7 +254,7 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 						if "post" not in data:
 							if data["@attributes"]["count"] == 0:
 								if page_id == 0:
-									console.print(f"{prepadding}[red]🚨 Error no posts found. Are you sure your tags: [bold]{tags}[/bold] exists?[/red]")
+									console.print(f"{prepadding}[red]🚨 Error no posts found. Are you sure the following tags exist: [bold]{tags}[/bold][/red]")
 								else:
 									console.print(f"{prepadding}[red]🚨 Error no post content found on page {page_id+1}. Stopping search and returning 0 urls. Are you sure your tags: [bold]{tags}[/bold] exists?[/red]")
 								return file_urls
