@@ -20,6 +20,7 @@ import aiohttp
 import time
 from rich.live import Live
 from rich.console import Group
+from rich.markup import escape
 from rich.progress import (
 	Progress, 
 	TaskID, 
@@ -64,7 +65,7 @@ ENV_FILE_NAME = ".gelbooru-dl.env"
 ENV_PATH = pathlib.Path.home() / ENV_FILE_NAME
 console = Console()
 API_CODES = ""#config["API_CODES"]
-custom_timeout = aiohttp.ClientTimeout(total=None, sock_read=60)
+custom_timeout = aiohttp.ClientTimeout(total=None, sock_read=1)
 
 # ----- MAIN CODE ----------------------------------------
 
@@ -145,7 +146,7 @@ async def download_file(file_url:str,media_save_folder:pathlib.Path,successful_u
 					aborted_urls.append(file_url)
 				else:
 					sleep_time = 1 + ((1+download_attempt) ** 2)
-					console.print(f"{prepadding}[yellow]Download attempt {download_attempt}/{MAX_DL_ATTEMPTS} FAILED for {file_url}. Retrying download in {sleep_time:.1f}s...[/yellow]")
+					if not SUPPRESS_WARNINGS: console.print(f"{prepadding}[yellow]Download attempt {download_attempt}/{MAX_DL_ATTEMPTS} FAILED for {file_url}. Retrying download in {sleep_time:.1f}s...[/yellow]")
 					await asyncio.sleep(sleep_time)
 
 		# Clean up progress bar after downloading/aborting file
@@ -162,7 +163,7 @@ async def download_file(file_url:str,media_save_folder:pathlib.Path,successful_u
 	
 async def download_files(file_urls:List[str],_media_save_folder:pathlib.Path,session:aiohttp.ClientSession):
 	if len(file_urls) == 0:
-		log.info(f"{prepadding}[yellow]⚠️  0 urls were found! Can not scrape media![/yellow]")
+		if not SUPPRESS_WARNINGS: log.info(f"{prepadding}[yellow]⚠️  0 urls were found! Can not scrape media![/yellow]")
 		return
 	
 	media_save_folder = pathlib.Path(_media_save_folder)
@@ -245,7 +246,7 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 			if not total_number_of_posts is None:
 				if total_number_of_posts>=20100 and not has_given_warning:
 					has_given_warning = True
-					console.print(f"{prepadding}[yellow]WARNING: Gelbooru API limits searches to a maximum of 20,100 results. Skipping {(total_number_of_posts-20100):,} posts (out of {total_number_of_posts:,} total matches).[/yellow]")
+					if not SUPPRESS_WARNINGS: console.print(f"{prepadding}[yellow]WARNING: Gelbooru API limits searches to a maximum of 20,100 results. Skipping {(total_number_of_posts-20100):,} posts (out of {total_number_of_posts:,} total matches).[/yellow]")
 				if has_given_warning:
 					status.update(f"  Finding file urls... [steel_blue1]{len(file_urls):,}[/steel_blue1]/[yellow]20,100[/yellow] found ([cyan]Total matches: {total_number_of_posts:,}[/cyan]).")
 				else:
@@ -289,13 +290,13 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 					else:
 						sleep_time = 1 + ((1+attempt) ** 2)
 						# Update the status spinner to show the warning!
-						console.print(f"{prepadding}[yellow]Scraping attempt {attempt}/{MAX_DL_ATTEMPTS} FAILED for page {page_id+1}. Retrying in {sleep_time}s...[/yellow]")
+						if not SUPPRESS_WARNINGS: console.print(f"{prepadding}[yellow]Scraping attempt {attempt}/{MAX_DL_ATTEMPTS} FAILED for page {page_id+1}. Retrying in {sleep_time}s...[/yellow]")
 						await asyncio.sleep(sleep_time)
 			
 			# TERMINATION STATE
 			# Gelbooru limits you to page_id 0 to 200
 			if page_id==200:
-				console.print(f"{prepadding}[yellow]Gathered Gelbooru limit of 20100 posts deep.[/yellow]")
+				if not SUPPRESS_WARNINGS: console.print(f"{prepadding}[yellow]Gathered Gelbooru limit of 20100 posts deep.[/yellow]")
 				break
 			# In case reach end and no urls are returned
 			if len(urls) == 0:
@@ -370,7 +371,8 @@ def cli_entry():
 	if key:
 		log.info(f"Saving credentials to : [steel_blue1]{pathlib.Path.home()/ENV_FILE_NAME}[/steel_blue1]")
 		if not ENV_PATH.exists(): ENV_PATH.touch()
-		if len(key)<150: log.warning("[yellow]WARNING: Your credentials were shorter than expected, please double check you pasted your full API Access Credentials.[/yellow]")
+		if len(key)<150: 
+			if not SUPPRESS_WARNINGS: log.warning("[yellow]WARNING: Your credentials were shorter than expected, please double check you pasted your full API Access Credentials.[/yellow]")
 		if not key[0] == "&": key="&"+key 
 		if key: dotenv.set_key(ENV_PATH,"key",key)
 	# Load env variables
@@ -402,10 +404,10 @@ def cli_entry():
 	MAX_DL_ATTEMPTS = max_dl_attempts
 	SUPPRESS_WARNINGS = bool(args.suppress_warnings)
 
-
+	safe_save_directory = escape(str(root_save_directory))
 	log.info((
 		f"{"_"*((60-10)//2)} SETTINGS {"_"*((60-10)//2)} "
-		f"\nSave directory: [steel_blue1]{root_save_directory}[/steel_blue1]"
+		f"\nSave directory: [steel_blue1]{safe_save_directory}[/steel_blue1]"
 		f"\n{f'Concurrent requests: [steel_blue1]{semaphore._value}[/steel_blue1]':<55}[i]<=increase this guy to dl faster by using [b]-c <amount>[/b]. but watch out, Gelbooru may throttle you which can cause some files to fail![/i]"
 		f"\nRetry attempts: [steel_blue1]{max_dl_attempts-1}[/steel_blue1]"
 		f"\n{f'Suppress warnings: [steel_blue1]{SUPPRESS_WARNINGS}[/steel_blue1]':<55}[i]<=like living on the edge? hide the yellow warnings by using the [b]-s[/b] flag![/i]"
