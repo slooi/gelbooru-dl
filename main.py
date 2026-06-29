@@ -399,7 +399,7 @@ def cli_entry():
 	console.print(( # MUST USE CONSOLE instead of log.info otherwise text like PUT GET, etc will be highlighted
 		f"{"_"*((60-10)//2)} SETTINGS {"_"*((60-10)//2)} "
 		f"\nSave directory: [steel_blue1]{safe_save_directory}[/steel_blue1]"
-		f"\n{f'Concurrent requests: [steel_blue1]{semaphore._value}[/steel_blue1]':<55}[i]<=increase this guy to dl faster by using [b]-c <amount>[/b]. but watch out, Gelbooru may throttle you which can cause some files to fail![/i]"
+		f"\n{f'Concurrent requests: [steel_blue1]{semaphore._value}[/steel_blue1]':<55}[i]<=increase this guy to dl faster by using [b]-c {escape("<amount>")}[/b]. but watch out, Gelbooru may throttle you which can cause some files to fail![/i]"
 		f"\nRetry attempts: [steel_blue1]{max_dl_attempts-1}[/steel_blue1]"
 		f"\n{f'Suppress warnings: [steel_blue1]{SUPPRESS_WARNINGS}[/steel_blue1]':<55}[i]<=like living on the edge? hide the yellow warnings by using the [b]-s[/b] flag![/i]"
 		f"\n{"_"*60}"
