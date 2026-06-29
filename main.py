@@ -112,7 +112,7 @@ async def download_file(file_url:str,media_save_folder:pathlib.Path,successful_u
 					# Download as a .part file first
 					part_filepath = filepath.with_name(filepath.name + ".part")
 					with open(part_filepath,"wb") as f:
-						async for chunk in res.content.iter_chunked(16777216):
+						async for chunk in res.content.iter_chunked(1048576):
 							f.write(chunk)
 							# Update the byte progress!
 							progress.update(file_task, advance=len(chunk))
