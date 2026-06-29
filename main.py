@@ -73,6 +73,7 @@ HEADERS = {
 
 # ----- SETUP VARS ----------------------------------------
 
+CHUNK_SIZE = 1024 * 1024
 API_CODES = "" #config["API_CODES"]
 ENV_PATH = pathlib.Path.home() / ".gelbooru-dl.env"
 console = Console()
@@ -107,13 +108,13 @@ async def download_file(file_url:str,media_save_folder:pathlib.Path,successful_u
 						total=file_size
 					)
 
-					# Validate parent folder exists
-					if not pathlib.Path(media_save_folder).exists(): os.makedirs(media_save_folder,exist_ok=True)
+					# Ensure parent folder exists
+					media_save_folder.mkdir(exist_ok=True)
 
 					# Download as a .part file first
 					part_filepath = filepath.with_name(filepath.name + ".part")
 					async with aiofiles.open(part_filepath,"wb") as f:
-						async for chunk in res.content.iter_chunked(1048576):
+						async for chunk in res.content.iter_chunked(CHUNK_SIZE):
 							await f.write(chunk)
 							# Update the byte progress!
 							progress.update(file_task, advance=len(chunk))
@@ -275,7 +276,7 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 					if attempt == MAX_DL_ATTEMPTS:
 						console.print(f"{PREPADDING}[red]Scraping attempt {attempt}/{MAX_DL_ATTEMPTS} FAILED for page {page_id+1}. Stopping search and returning {len(file_urls)} urls. Cause: {repr(e)}[/red]")
 						return file_urls
-						raise Exception("TODO")
+						raise Exception("Might make report later")
 					else:
 						sleep_time = 1 + ((1+attempt) ** 2)
 						# Update the status spinner to show the warning!
