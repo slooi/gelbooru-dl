@@ -3,6 +3,7 @@ import logging
 import math
 from typing import Callable, Dict, List, Tuple, TypedDict
 from bs4 import BeautifulSoup
+import dotenv
 from requests import sessions
 import json
 from dotenv import dotenv_values
@@ -31,11 +32,12 @@ from rich.progress import (
 import argparse
 # ----- USER CONFIGURABLE SETTINGS ----------------------------------------
 
-ROOT_SAVE_DIRECTORY:pathlib.Path = pathlib.Path("gelbooru-dl")
+DEFAULT_ROOT_SAVE_DIRECTORY:pathlib.Path = pathlib.Path("gelbooru-dl")
 MAX_DL_ATTEMPTS = 7
 DEFAULT_EXCLUDE_TAGS = "+-yaoi+-furry"
 prepadding = "    "
 MAX_CONCURRENT_REQUESTS = 8
+SUPPRESS_WARNINGS = False
 
 # ----- LOGGING SETUP ----------------------------------------
 
@@ -58,12 +60,10 @@ log = logging.getLogger(__name__)
 
 # ----- SETUP VARS ----------------------------------------
 
+ENV_FILE_NAME = ".gelbooru-dl.env"
+ENV_PATH = pathlib.Path.home() / ENV_FILE_NAME
 console = Console()
-ENV_PATH = pathlib.Path.home() / ".gelbooru-dl.env"
-config = dotenv_values(ENV_PATH)
-if not "API_CODES" in config:
-	raise Exception(F"ERROR: Could not find key 'API_CODES' in {ENV_PATH}")
-API_CODES = config["API_CODES"]
+API_CODES = ""#config["API_CODES"]
 custom_timeout = aiohttp.ClientTimeout(total=None, sock_read=60)
 
 # ----- MAIN CODE ----------------------------------------
@@ -245,8 +245,11 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 			if not total_number_of_posts is None:
 				if total_number_of_posts>=20100 and not has_given_warning:
 					has_given_warning = True
-					console.print(f"{prepadding}[yellow]WARNING: Gelbooru prevents searches more than 20100 posts deep. Only the first 20100 posts will be scraped![/yellow]")
-				status.update(f"  Finding file urls... [steel_blue1]{len(file_urls)}[/steel_blue1]/[steel_blue1]{total_number_of_posts}[/steel_blue1] found.")
+					console.print(f"{prepadding}[yellow]WARNING: Gelbooru API limits searches to a maximum of 20,100 results. Skipping {(total_number_of_posts-20100):,} posts (out of {total_number_of_posts:,} total matches).[/yellow]")
+				if has_given_warning:
+					status.update(f"  Finding file urls... [steel_blue1]{len(file_urls):,}[/steel_blue1]/[yellow]20,100[/yellow] found ([cyan]Total matches: {total_number_of_posts:,}[/cyan]).")
+				else:
+					status.update(f"  Finding file urls... [steel_blue1]{len(file_urls):,}[/steel_blue1]/[steel_blue1]{total_number_of_posts:,}[/steel_blue1] found.")
 
 
 			for attempt in range(1,MAX_DL_ATTEMPTS+1):
@@ -313,8 +316,106 @@ searchs_to_download = [
 async def main():
 	async with aiohttp.ClientSession(headers=headers) as session:
 		for i, search in enumerate(searchs_to_download):
+
 			search = search.strip()
 			log.info(f"[[steel_blue1]{i+1}[/steel_blue1]/[steel_blue1]{len(searchs_to_download)}[/steel_blue1]] [steel_blue1]{search}[/steel_blue1]")
 			file_urls = await get_posts_using_tags(search,session=session)
-			await download_files(file_urls=file_urls,_media_save_folder=ROOT_SAVE_DIRECTORY/search,session=session)
-asyncio.run(main())
+			await download_files(file_urls=file_urls,_media_save_folder=DEFAULT_ROOT_SAVE_DIRECTORY/search,session=session)
+
+# ----- CLI AND MAIN EXECUTION ----------------------------------------
+
+async def main2(searchs_to_download: List[str], save_dir: pathlib.Path):
+	async with aiohttp.ClientSession(headers=headers) as session:
+		for i, search in enumerate(searchs_to_download):
+
+			search = search.strip()
+			log.info(f"[[steel_blue1]{i+1}[/steel_blue1]/[steel_blue1]{len(searchs_to_download)}[/steel_blue1]] [steel_blue1]{search}[/steel_blue1]")
+			file_urls = await get_posts_using_tags(search,session=session)
+			await download_files(file_urls=file_urls,_media_save_folder=save_dir/search,session=session)
+
+
+def cli_entry():
+	"""This is the function triggered when you type 'gelbooru-dl' in the terminal."""
+	global semaphore
+	global MAX_DL_ATTEMPTS
+	global SUPPRESS_WARNINGS
+	global API_CODES
+
+	# 1. GATHER ARGUMENTS
+	parser = argparse.ArgumentParser(description="Download images from Gelbooru using tags.")
+	
+	# MAIN ARGUMENTS - REQUIRED AT LEAST ONCE
+	parser.add_argument("searches",nargs="+",help="Queries to search. Perform separate searches by adding a space between them (e.g. suzumiya_haruhi black_hair). Use '+' to search for posts with BOTH tags (e.g. suzumiya_haruhi+black_hair)")
+	parser.add_argument("-k", "--key", default="", help="Your Gelbooru API credentials containing your api_key+user_id")
+
+	# AUXILIARY ARGUMENTS
+	# Require inputs
+	parser.add_argument("-d", "--save-dir", default=DEFAULT_ROOT_SAVE_DIRECTORY, help=f"Root save directory (default: {DEFAULT_ROOT_SAVE_DIRECTORY}). Files will be saved into {DEFAULT_ROOT_SAVE_DIRECTORY/'<SEARCH>'}")
+	parser.add_argument("-c", "--concurrent-requests", default=MAX_CONCURRENT_REQUESTS, help=f"Max number of concurrent requests that can be made (default: {MAX_CONCURRENT_REQUESTS})")
+	parser.add_argument("-m", "--max-retry-attempts", default=MAX_DL_ATTEMPTS-1, help=f"Number of retry attempts if something goes wrong file download/saving a file. default: {MAX_DL_ATTEMPTS-1}")
+	# Boolean flag
+	parser.add_argument("-s", "--suppress-warnings", action='store_true', help=f"Suppress warnings. eg: warning popup if search can't download all posts due to Gelbooru 20100 post depth limit, downloading/scraping issues that are within retry limits, etc")
+
+	args = parser.parse_args()
+
+
+	# 2. PARSE ARGUMENTS
+	# 2.1 PARSE MAIN ARGUMENTS
+	# GET SERACHES
+	searches = args.searches
+
+	# SAVE/LOAD ENVIRONMENT VARIABLES
+	key = str(args.key).strip()
+	# Update/Add environment var if given
+	if key:
+		log.info(f"Saving credentials to : [steel_blue1]{pathlib.Path.home()/ENV_FILE_NAME}[/steel_blue1]")
+		if not ENV_PATH.exists(): ENV_PATH.touch()
+		if len(key)<150: log.warning("[yellow]WARNING: Your credentials were shorter than expected, please double check you pasted your full API Access Credentials.[/yellow]")
+		if not key[0] == "&": key="&"+key 
+		if key: dotenv.set_key(ENV_PATH,"key",key)
+	# Load env variables
+	key = dotenv_values(ENV_PATH).get("key","")
+	# Validate env variables are not None
+	if not key:
+		log.info(
+			"\n[red]Missing [b]API CREDENTIALS[/b][/red]"
+			"\n[b]How to add your credentials:[/b]"
+			f"\n{prepadding}1. Log into your Gelbooru account in your web browser"
+			f"\n{prepadding}2. Go to [steel_blue1]Settings -> Options[/steel_blue1] (or visit: [steel_blue1]https://gelbooru.com/index.php?page=account&s=options[/steel_blue1])"
+			f"\n{prepadding}3. Scroll down to the very bottom. You should see [steel_blue1]API Access Credentials[/steel_blue1]"
+			f"\n{prepadding}4. There will be a long string of text like shown below. Copy the whole thing"
+			f"\n{prepadding}   [steel_blue1]&api_key=a1239798a7a98d7a9d87ad98wn798...(shortened for brevity's sake)...d09a8dn7w90d8w7and98a7wnd98an7w79&user_id=2001235 [/steel_blue1]"
+			f"\n{prepadding}5. Now run [green bold]gelbooru-dl -k \"PASTE_YOUR_STRING_HERE\"[/green bold]. [b yellow]You must add DOUBLE QUOTES(\") to [b]BOTH SIDES[/b] of your string or it will fail![/b yellow]"
+			f"\n{prepadding}Example: [green bold]gelbooru-dl -k \"&api_key=a1239798a7a98d7a9d87ad98wn798...(shortened for brevity's sake)...d09a8dn7w90d8w7and98a7wnd98an7w79&user_id=2001235\"[/green bold]"
+		)
+		quit()
+	API_CODES = key
+
+	# 2.2 PARSE AUXILARY ARGUMENTS
+	root_save_directory = pathlib.Path(args.save_dir)
+	
+	concurrent_requests = int(args.concurrent_requests)
+	if not concurrent_requests>0: raise Exception("ERROR: `concurrent_requests` MUST be greater or equal to 1")
+	semaphore = asyncio.Semaphore(concurrent_requests)
+
+	max_dl_attempts = int(args.max_retry_attempts)+1
+	MAX_DL_ATTEMPTS = max_dl_attempts
+	SUPPRESS_WARNINGS = bool(args.suppress_warnings)
+
+
+	log.info((
+		f"{"_"*((60-10)//2)} SETTINGS {"_"*((60-10)//2)} "
+		f"\nSave directory: [steel_blue1]{root_save_directory}[/steel_blue1]"
+		f"\n{f'Concurrent requests: [steel_blue1]{semaphore._value}[/steel_blue1]':<55}[i]<=increase this guy to dl faster by using [b]-c <amount>[/b]. but watch out, Gelbooru may throttle you which can cause some files to fail![/i]"
+		f"\nRetry attempts: [steel_blue1]{max_dl_attempts-1}[/steel_blue1]"
+		f"\n{f'Suppress warnings: [steel_blue1]{SUPPRESS_WARNINGS}[/steel_blue1]':<55}[i]<=like living on the edge? hide the yellow warnings by using the [b]-s[/b] flag![/i]"
+		f"\n{"_"*60}"
+	))
+
+	try:
+		asyncio.run(main2(searches, root_save_directory))
+	except KeyboardInterrupt:
+		log.info("\n[red]Download cancelled by user[/red]")
+
+if __name__ == "__main__":
+	cli_entry()
