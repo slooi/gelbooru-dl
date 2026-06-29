@@ -314,6 +314,21 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 
 	return file_urls
 
+def remove_part_files(dir:pathlib.Path):
+	if not dir.exists(): return
+
+	# Collect .part files
+	part_files = [*dir.glob("*.part")]
+	if len(part_files) == 0: return
+
+	logging.info(f"{prepadding}[yellow]Found {len(part_files)} leftover .part files. Cleaning up...[/yellow]")
+	for file_path in part_files:
+		try:
+			file_path.unlink()  # This deletes the file
+		except Exception as e:
+			logging.warning(f"[warning]Failed to delete {file_path}. Skipping... Cause: {e}[/warning]")
+
+
 # ----- CLI AND MAIN EXECUTION ----------------------------------------
 
 async def main(searchs_to_download: List[str], save_dir: pathlib.Path):
@@ -323,8 +338,10 @@ async def main(searchs_to_download: List[str], save_dir: pathlib.Path):
 			search = search.strip()
 			log.info(f"[[steel_blue1]{i+1}[/steel_blue1]/[steel_blue1]{len(searchs_to_download)}[/steel_blue1]] [steel_blue1]{search}[/steel_blue1]")
 			file_urls = await get_posts_using_tags(search,session=session)
-			await download_files(file_urls=file_urls,_media_save_folder=save_dir/search,session=session)
 
+			media_save_folder = save_dir/search
+			await download_files(file_urls=file_urls,_media_save_folder=media_save_folder,session=session)
+			remove_part_files(media_save_folder)
 
 def cli_entry():
 	"""This is the function triggered when you type 'gelbooru-dl' in the terminal."""
