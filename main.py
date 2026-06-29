@@ -77,11 +77,10 @@ ENV_PATH = pathlib.Path.home() / ".gelbooru-dl.env"
 console = Console()
 custom_timeout = aiohttp.ClientTimeout(total=None, sock_read=1)
 
-semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
 # ----- MAIN CODE ----------------------------------------
 
-async def download_file(file_url:str,media_save_folder:pathlib.Path,successful_urls:List[str],aborted_urls:List[str],already_downloaded_urls:List[str],progress:Progress,main_task:TaskID,session:aiohttp.ClientSession):
+async def download_file(file_url:str,media_save_folder:pathlib.Path,successful_urls:List[str],aborted_urls:List[str],already_downloaded_urls:List[str],progress:Progress,main_task:TaskID,session:aiohttp.ClientSession,semaphore:asyncio.Semaphore):
 	filepath = media_save_folder / pathlib.Path(file_url).name
 
 	async with semaphore:
@@ -151,7 +150,7 @@ async def download_file(file_url:str,media_save_folder:pathlib.Path,successful_u
 		)
 		progress.update(main_task, description=new_desc, advance=1)
 	
-async def download_files(file_urls:List[str],_media_save_folder:pathlib.Path,session:aiohttp.ClientSession):
+async def download_files(file_urls:List[str],_media_save_folder:pathlib.Path,session:aiohttp.ClientSession,semaphore:asyncio.Semaphore):
 	if len(file_urls) == 0:
 		if not SUPPRESS_WARNINGS: log.info(f"{prepadding}[yellow]⚠️  0 urls were found! Can not scrape media![/yellow]")
 		return
@@ -188,7 +187,8 @@ async def download_files(file_urls:List[str],_media_save_folder:pathlib.Path,ses
 			already_downloaded_urls=already_downloaded_urls,
 			progress=progress,
 			main_task=main_task,
-			session=session
+			session=session,
+			semaphore=semaphore
 		)) for i, file_url in enumerate(file_urls)]
 		await asyncio.gather(*atasks)
 	
@@ -316,7 +316,9 @@ def remove_part_files(dir:pathlib.Path):
 
 # ----- CLI AND MAIN EXECUTION ----------------------------------------
 
-async def main(searchs_to_download: List[str], save_dir: pathlib.Path):
+async def main(searchs_to_download: List[str], save_dir: pathlib.Path, concurrent_requests:int):
+	semaphore = asyncio.Semaphore(concurrent_requests)
+
 	async with aiohttp.ClientSession(headers=HEADERS) as session:
 		for i, search in enumerate(searchs_to_download):
 
@@ -325,12 +327,11 @@ async def main(searchs_to_download: List[str], save_dir: pathlib.Path):
 			file_urls = await get_posts_using_tags(search,session=session)
 
 			media_save_folder = save_dir/search
-			await download_files(file_urls=file_urls,_media_save_folder=media_save_folder,session=session)
+			await download_files(file_urls=file_urls,_media_save_folder=media_save_folder,session=session,semaphore=semaphore)
 			remove_part_files(media_save_folder)
 
 def cli_entry():
 	"""This is the function triggered when you type 'gelbooru-dl' in the terminal."""
-	global semaphore
 	global MAX_DL_ATTEMPTS
 	global SUPPRESS_WARNINGS
 	global API_CODES
@@ -340,15 +341,15 @@ def cli_entry():
 	
 	# MAIN ARGUMENTS - REQUIRED AT LEAST ONCE
 	parser.add_argument("searches",nargs="+",help="Queries to search. Perform separate searches by adding a space between them (e.g. suzumiya_haruhi black_hair). Use '+' to search for posts with BOTH tags (e.g. suzumiya_haruhi+black_hair)")
-	parser.add_argument("-k", "--key", default="", help="Your Gelbooru API credentials containing your api_key+user_id")
+	parser.add_argument("-k", "--key", default="", help="Your Gelbooru API credentials containing your api_key+user_id. YOU ARE REQUIRED TO RUN THIS AT LEAST ONCE")
 
 	# AUXILIARY ARGUMENTS
 	# Require inputs
-	parser.add_argument("-d", "--save-dir", default=DEFAULT_ROOT_SAVE_DIRECTORY, help=f"Root save directory (default: {DEFAULT_ROOT_SAVE_DIRECTORY}). Files will be saved into {DEFAULT_ROOT_SAVE_DIRECTORY/'<SEARCH>'}")
+	parser.add_argument("-d", "--save-dir", default=DEFAULT_ROOT_SAVE_DIRECTORY, help=f"Root save directory (default: {DEFAULT_ROOT_SAVE_DIRECTORY}. eg: Files will be saved into {DEFAULT_ROOT_SAVE_DIRECTORY/'<SEARCH>)'}")
 	parser.add_argument("-c", "--concurrent-requests", default=MAX_CONCURRENT_REQUESTS, help=f"Max number of concurrent requests that can be made (default: {MAX_CONCURRENT_REQUESTS})")
-	parser.add_argument("-m", "--max-retry-attempts", default=MAX_DL_ATTEMPTS-1, help=f"Number of retry attempts if something goes wrong file download/saving a file. default: {MAX_DL_ATTEMPTS-1}")
+	parser.add_argument("-m", "--max-retry-attempts", default=MAX_DL_ATTEMPTS-1, help=f"Number of retry attempts if something goes wrong file while downloading/saving a file. default: {MAX_DL_ATTEMPTS-1}")
 	# Boolean flag
-	parser.add_argument("-s", "--suppress-warnings", action='store_true', help=f"Suppress warnings. eg: warning popup if search can't download all posts due to Gelbooru 20100 post depth limit, downloading/scraping issues that are within retry limits, etc")
+	parser.add_argument("-s", "--suppress-warnings", action='store_true', help=f"Suppress yellow warnings. It will suppress: warning popups if search can't download all posts due to Gelbooru 20100 post depth limit, downloading/scraping issues that are within retry limits, etc")
 
 	args = parser.parse_args()
 
@@ -391,7 +392,6 @@ def cli_entry():
 	
 	concurrent_requests = int(args.concurrent_requests)
 	if not concurrent_requests>0: raise Exception("ERROR: `concurrent_requests` MUST be greater or equal to 1")
-	semaphore = asyncio.Semaphore(concurrent_requests)
 
 	max_dl_attempts = int(args.max_retry_attempts)+1
 	MAX_DL_ATTEMPTS = max_dl_attempts
@@ -401,14 +401,14 @@ def cli_entry():
 	console.print(( # MUST USE CONSOLE instead of log.info otherwise text like PUT GET, etc will be highlighted
 		f"{"_"*((60-10)//2)} SETTINGS {"_"*((60-10)//2)} "
 		f"\nSave directory: [steel_blue1]{safe_save_directory}[/steel_blue1]"
-		f"\n{f'Concurrent requests: [steel_blue1]{semaphore._value}[/steel_blue1]':<55}[i]<=increase this guy to dl faster by using [b]-c {escape("<amount>")}[/b]. but watch out, Gelbooru may throttle you which can cause some files to fail![/i]"
+		f"\n{f'Concurrent requests: [steel_blue1]{concurrent_requests}[/steel_blue1]':<55}[i]<=increase this guy to dl faster by using [b]-c {escape("<amount>")}[/b]. but watch out, Gelbooru may throttle you which can cause some files to fail![/i]"
 		f"\nRetry attempts: [steel_blue1]{max_dl_attempts-1}[/steel_blue1]"
 		f"\n{f'Suppress warnings: [steel_blue1]{SUPPRESS_WARNINGS}[/steel_blue1]':<55}[i]<=like living on the edge? hide the yellow warnings by using the [b]-s[/b] flag![/i]"
 		f"\n{"_"*60}"
 	))
 
 	try:
-		asyncio.run(main(searches, root_save_directory))
+		asyncio.run(main(searches, root_save_directory,concurrent_requests))
 	except KeyboardInterrupt:
 		log.info("\n[red]Download cancelled by user[/red]")
 
