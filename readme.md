@@ -34,16 +34,3 @@ Note: `<TAGS>` MUST be formatted following Gelbooru's URL tagging conventions. T
 ```gelbooru-dl suzumiya_haruhi+black_hair nagato_yuki```
 - This will only download posts containg BOTH `suzumiya_haruhi` and `black_hair` tags
 - Then after the above is done, it will download posts with the `nagato_yuki` tag
-
-```gelbooru-dl -l mylist.txt```
-- This will download all the tags in `mylist.txt`
-- In `mylist.txt` each seperate search must be indicated with either a space or new line.
-- eg:
-```
-suzumiya_haruhi+black_hair nagato_yuki
-wlop
-```
-- This will sequentially perform the 3 seperate searches in the order below:
-    1) `suzumiya_haruhi+black_hair`
-    2) `nagato_yuki`
-    3) `wlop`
