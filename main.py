@@ -1,17 +1,17 @@
-import asyncio
-import logging
-import sys
-from typing import List
-import dotenv
-from dotenv import dotenv_values
-import pathlib
 import os
+import sys
+import logging
+import asyncio
+import aiohttp
+import dotenv
+import pathlib
+import argparse
+from typing import List
+from dotenv import dotenv_values
 from rich.highlighter import NullHighlighter
 from rich.logging import RichHandler
 from rich import print
-from rich.progress import Progress, TaskID
 from rich.console import Console
-import aiohttp
 from rich.live import Live
 from rich.console import Group
 from rich.markup import escape
@@ -23,7 +23,6 @@ from rich.progress import (
 	TaskProgressColumn, 
 	TimeRemainingColumn,
 )
-import argparse
 # ----- USER CONFIGURABLE SETTINGS ----------------------------------------
 
 DEFAULT_ROOT_SAVE_DIRECTORY:pathlib.Path = pathlib.Path("gelbooru-dl")
