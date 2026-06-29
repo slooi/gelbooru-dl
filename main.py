@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 import asyncio
+import aiofiles
 import aiohttp
 import dotenv
 import pathlib
@@ -111,9 +112,9 @@ async def download_file(file_url:str,media_save_folder:pathlib.Path,successful_u
 
 					# Download as a .part file first
 					part_filepath = filepath.with_name(filepath.name + ".part")
-					with open(part_filepath,"wb") as f:
+					async with aiofiles.open(part_filepath,"wb") as f:
 						async for chunk in res.content.iter_chunked(1048576):
-							f.write(chunk)
+							await f.write(chunk)
 							# Update the byte progress!
 							progress.update(file_task, advance=len(chunk))
 					# Rename the .part file to the final filename ONLY when 100% complete
