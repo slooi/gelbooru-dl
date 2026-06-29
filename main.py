@@ -1,9 +1,7 @@
 import asyncio
 import logging
-from typing import Callable, Dict, List, Tuple, TypedDict
-from bs4 import BeautifulSoup
+from typing import List
 import dotenv
-from requests import sessions
 from dotenv import dotenv_values
 import pathlib
 import os
@@ -12,7 +10,6 @@ from rich.logging import RichHandler
 from rich import print
 from rich.progress import Progress, TaskID
 from rich.console import Console
-from requests.models import Response
 import aiohttp
 from rich.live import Live
 from rich.console import Group
@@ -24,7 +21,6 @@ from rich.progress import (
 	BarColumn, 
 	TaskProgressColumn, 
 	TimeRemainingColumn,
-	DownloadColumn
 )
 import argparse
 # ----- USER CONFIGURABLE SETTINGS ----------------------------------------
@@ -81,8 +77,6 @@ ENV_PATH = pathlib.Path.home() / ".gelbooru-dl.env"
 console = Console()
 custom_timeout = aiohttp.ClientTimeout(total=None, sock_read=1)
 
-s = sessions.Session()
-s.headers.update(HEADERS)	
 semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
 # ----- MAIN CODE ----------------------------------------
