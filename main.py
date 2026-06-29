@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 from typing import List
 import dotenv
 from dotenv import dotenv_values
@@ -383,7 +384,7 @@ def cli_entry():
 			f"\n{prepadding}5. Now run [green bold]gelbooru-dl -k \"PASTE_YOUR_STRING_HERE\"[/green bold]. [b yellow]You must add DOUBLE QUOTES(\") to [b]BOTH SIDES[/b] of your string or it will fail![/b yellow]"
 			f"\n{prepadding}Example: [green bold]gelbooru-dl -k \"&api_key=a1239798a7a98d7a9d87ad98wn798...(shortened for brevity's sake)...d09a8dn7w90d8w7and98a7wnd98an7w79&user_id=2001235\"[/green bold]"
 		)
-		quit()
+		sys.exit(1)
 	API_CODES = key
 
 	# 2.2 PARSE AUXILARY ARGUMENTS
