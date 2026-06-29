@@ -311,21 +311,9 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 
 	return file_urls
 
-searchs_to_download = [
-]
-
-async def main():
-	async with aiohttp.ClientSession(headers=headers) as session:
-		for i, search in enumerate(searchs_to_download):
-
-			search = search.strip()
-			log.info(f"[[steel_blue1]{i+1}[/steel_blue1]/[steel_blue1]{len(searchs_to_download)}[/steel_blue1]] [steel_blue1]{search}[/steel_blue1]")
-			file_urls = await get_posts_using_tags(search,session=session)
-			await download_files(file_urls=file_urls,_media_save_folder=DEFAULT_ROOT_SAVE_DIRECTORY/search,session=session)
-
 # ----- CLI AND MAIN EXECUTION ----------------------------------------
 
-async def main2(searchs_to_download: List[str], save_dir: pathlib.Path):
+async def main(searchs_to_download: List[str], save_dir: pathlib.Path):
 	async with aiohttp.ClientSession(headers=headers) as session:
 		for i, search in enumerate(searchs_to_download):
 
@@ -405,7 +393,7 @@ def cli_entry():
 	SUPPRESS_WARNINGS = bool(args.suppress_warnings)
 
 	safe_save_directory = escape(str(root_save_directory))
-	log.info((
+	console.print(( # MUST USE CONSOLE instead of log.info otherwise text like PUT GET, etc will be highlighted
 		f"{"_"*((60-10)//2)} SETTINGS {"_"*((60-10)//2)} "
 		f"\nSave directory: [steel_blue1]{safe_save_directory}[/steel_blue1]"
 		f"\n{f'Concurrent requests: [steel_blue1]{semaphore._value}[/steel_blue1]':<55}[i]<=increase this guy to dl faster by using [b]-c <amount>[/b]. but watch out, Gelbooru may throttle you which can cause some files to fail![/i]"
@@ -415,7 +403,7 @@ def cli_entry():
 	))
 
 	try:
-		asyncio.run(main2(searches, root_save_directory))
+		asyncio.run(main(searches, root_save_directory))
 	except KeyboardInterrupt:
 		log.info("\n[red]Download cancelled by user[/red]")
 
