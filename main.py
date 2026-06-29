@@ -220,6 +220,7 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 		"&tags={tags}"
 		f"{DEFAULT_EXCLUDE_TAGS}"
 		"&pid={page_id}"
+		"&limit=100"
 	)
 	file_urls:List[str] = []
 	urls = []
@@ -305,12 +306,12 @@ def remove_part_files(dir:pathlib.Path):
 	part_files = [*dir.glob("*.part")]
 	if len(part_files) == 0: return
 
-	logging.info(f"{prepadding}[yellow]Found {len(part_files)} leftover .part files. Cleaning up...[/yellow]")
+	log.info(f"{prepadding}[yellow]Found {len(part_files)} leftover .part files. Cleaning up...[/yellow]")
 	for file_path in part_files:
 		try:
 			file_path.unlink()  # This deletes the file
 		except Exception as e:
-			logging.warning(f"[warning]Failed to delete {file_path}. Skipping... Cause: {e}[/warning]")
+			log.warning(f"[warning]Failed to delete {file_path}. Skipping... Cause: {e}[/warning]")
 
 
 # ----- CLI AND MAIN EXECUTION ----------------------------------------
