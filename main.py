@@ -28,7 +28,7 @@ from rich.progress import (
 DEFAULT_ROOT_SAVE_DIRECTORY:pathlib.Path = pathlib.Path("gelbooru-dl")
 MAX_DL_ATTEMPTS = 7
 DEFAULT_EXCLUDE_TAGS = "+-yaoi+-furry"
-prepadding = "    "
+PREPADDING = "    "
 MAX_CONCURRENT_REQUESTS = 8
 SUPPRESS_WARNINGS = False
 
@@ -102,7 +102,7 @@ async def download_file(file_url:str,media_save_folder:pathlib.Path,successful_u
 					if file_task is not None: progress.remove_task(file_task)
 					file_size = int(res.headers.get('Content-Length', 0)) or None
 					file_task = progress.add_task(
-						f"{prepadding}  Downloading [steel_blue1]{file_url}[/steel_blue1]", 
+						f"{PREPADDING}  Downloading [steel_blue1]{file_url}[/steel_blue1]", 
 						total=file_size
 					)
 
@@ -128,14 +128,14 @@ async def download_file(file_url:str,media_save_folder:pathlib.Path,successful_u
 					try: 
 						part_filepath.unlink() # Deletes the file
 					except Exception as e2:
-						if not SUPPRESS_WARNINGS: console.print(f"{prepadding}[yellow]COULD NOT DELETE TEMPORARY FILE: {filepath.name + ".part"}. Cause: {repr(e2)}[/yellow]")
+						if not SUPPRESS_WARNINGS: console.print(f"{PREPADDING}[yellow]COULD NOT DELETE TEMPORARY FILE: {filepath.name + ".part"}. Cause: {repr(e2)}[/yellow]")
 				
 				if download_attempt == MAX_DL_ATTEMPTS:
-					console.print(f"{prepadding}[red]Download attempt {download_attempt}/{MAX_DL_ATTEMPTS} FAILED for {file_url}. ABORTING DOWNLOAD. Cause: {repr(e)}[/red]")
+					console.print(f"{PREPADDING}[red]Download attempt {download_attempt}/{MAX_DL_ATTEMPTS} FAILED for {file_url}. ABORTING DOWNLOAD. Cause: {repr(e)}[/red]")
 					aborted_urls.append(file_url)
 				else:
 					sleep_time = 1 + ((1+download_attempt) ** 2)
-					if not SUPPRESS_WARNINGS: console.print(f"{prepadding}[yellow]Download attempt {download_attempt}/{MAX_DL_ATTEMPTS} FAILED for {file_url}. Retrying download in {sleep_time:.1f}s...[/yellow]")
+					if not SUPPRESS_WARNINGS: console.print(f"{PREPADDING}[yellow]Download attempt {download_attempt}/{MAX_DL_ATTEMPTS} FAILED for {file_url}. Retrying download in {sleep_time:.1f}s...[/yellow]")
 					await asyncio.sleep(sleep_time)
 
 		# Clean up progress bar after downloading/aborting file
@@ -145,14 +145,14 @@ async def download_file(file_url:str,media_save_folder:pathlib.Path,successful_u
 		# Update the main overall progress bar text and advance it
 		aborted_color = "steel_blue1" if len(aborted_urls) == 0 else "red"
 		new_desc = (
-			f"{prepadding} [steel_blue1]{len(successful_urls)}[/steel_blue1]/[steel_blue1]{progress.tasks[main_task].total}[/steel_blue1] downloaded | "
+			f"{PREPADDING} [steel_blue1]{len(successful_urls)}[/steel_blue1]/[steel_blue1]{progress.tasks[main_task].total}[/steel_blue1] downloaded | "
 			f"[{aborted_color}]{len(aborted_urls)}[/{aborted_color}] aborted"
 		)
 		progress.update(main_task, description=new_desc, advance=1)
 	
 async def download_files(file_urls:List[str],_media_save_folder:pathlib.Path,session:aiohttp.ClientSession,semaphore:asyncio.Semaphore):
 	if len(file_urls) == 0:
-		if not SUPPRESS_WARNINGS: log.info(f"{prepadding}[yellow]⚠️  0 urls were found! Can not scrape media![/yellow]")
+		if not SUPPRESS_WARNINGS: log.info(f"{PREPADDING}[yellow]⚠️  0 urls were found! Can not scrape media![/yellow]")
 		return
 	
 	media_save_folder = pathlib.Path(_media_save_folder)
@@ -165,7 +165,7 @@ async def download_files(file_urls:List[str],_media_save_folder:pathlib.Path,ses
 	already_downloaded_urls = []
 
 	# Create a group for a header and progress bars
-	header = f"{prepadding}Saving to: [steel_blue1]{media_save_folder}[/steel_blue1]"
+	header = f"{PREPADDING}Saving to: [steel_blue1]{media_save_folder}[/steel_blue1]"
 	progress = Progress(
 		TextColumn("[progress.description]{task.description}"),
 		BarColumn(),
@@ -176,7 +176,7 @@ async def download_files(file_urls:List[str],_media_save_folder:pathlib.Path,ses
 	
 	# Live() instead of progress for rendering of multiple pieces of info. transient=True erases everything when done!
 	with Live(render_group, console=console, transient=True):
-		main_task = progress.add_task(f"{prepadding} 0/{num_of_file_urls} downloaded | 0 aborted", total=num_of_file_urls)
+		main_task = progress.add_task(f"{PREPADDING} 0/{num_of_file_urls} downloaded | 0 aborted", total=num_of_file_urls)
 		
 		atasks = [asyncio.create_task(download_file(
 			file_url=file_url,
@@ -195,12 +195,12 @@ async def download_files(file_urls:List[str],_media_save_folder:pathlib.Path,ses
 
 	# DOWNLOAD FILES SUMMARY REPORT
 	SUMMARY_MESSAGE = (
-		f"{prepadding}"
+		f"{PREPADDING}"
 		"{symbol}Downloaded [{color}]{successful_downloads_num}[/{color}]/[steel_blue1]{total_url_num}[/steel_blue1] files"
 		"([steel_blue1]{new_downloads_num}[/steel_blue1] new, [steel_blue1]{already_downloaded_num}[/steel_blue1] already existed)."
 		" [{color}]{aborted_num}[/{color}] files failed to download."
 	)
-	if len(aborted_urls) > 0: log.info(f"{prepadding}The following files failed to download:\n[red]{"\n".join([f"{prepadding*2}❌ {url}" for url in aborted_urls])}[/red]")
+	if len(aborted_urls) > 0: log.info(f"{PREPADDING}The following files failed to download:\n[red]{"\n".join([f"{PREPADDING*2}❌ {url}" for url in aborted_urls])}[/red]")
 	log.info(SUMMARY_MESSAGE.format(
 		symbol="✅ " if len(aborted_urls) == 0 else "⚠️  ",
 		color="green" if len(aborted_urls) == 0 else "red",
@@ -234,7 +234,7 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 			if not total_number_of_posts is None:
 				if total_number_of_posts>=20100 and not has_given_warning:
 					has_given_warning = True
-					if not SUPPRESS_WARNINGS: console.print(f"{prepadding}[yellow]WARNING: Gelbooru API limits searches to a maximum of 20,100 results. Skipping {(total_number_of_posts-20100):,} posts (out of {total_number_of_posts:,} total matches).[/yellow]")
+					if not SUPPRESS_WARNINGS: console.print(f"{PREPADDING}[yellow]WARNING: Gelbooru API limits searches to a maximum of 20,100 results. Skipping {(total_number_of_posts-20100):,} posts (out of {total_number_of_posts:,} total matches).[/yellow]")
 				if has_given_warning:
 					status.update(f"  Finding file urls... [steel_blue1]{len(file_urls):,}[/steel_blue1]/[yellow]20,100[/yellow] found ([cyan]Total matches: {total_number_of_posts:,}[/cyan]).")
 				else:
@@ -257,9 +257,9 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 						if "post" not in data:
 							if data["@attributes"]["count"] == 0:
 								if page_id == 0:
-									console.print(f"{prepadding}[red]🚨 Error no posts found. Are you sure the following tags exist: [bold]{tags}[/bold][/red]")
+									console.print(f"{PREPADDING}[red]🚨 Error no posts found. Are you sure the following tags exist: [bold]{tags}[/bold][/red]")
 								else:
-									console.print(f"{prepadding}[red]🚨 Error no post content found on page {page_id+1}. Stopping search and returning 0 urls. Are you sure your tags: [bold]{tags}[/bold] exists?[/red]")
+									console.print(f"{PREPADDING}[red]🚨 Error no post content found on page {page_id+1}. Stopping search and returning 0 urls. Are you sure your tags: [bold]{tags}[/bold] exists?[/red]")
 								return file_urls
 							raise Exception("ERROR: `post` not in data")
 
@@ -272,19 +272,19 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 						break
 				except Exception as e:
 					if attempt == MAX_DL_ATTEMPTS:
-						console.print(f"{prepadding}[red]Scraping attempt {attempt}/{MAX_DL_ATTEMPTS} FAILED for page {page_id+1}. Stopping search and returning {len(file_urls)} urls. Cause: {repr(e)}[/red]")
+						console.print(f"{PREPADDING}[red]Scraping attempt {attempt}/{MAX_DL_ATTEMPTS} FAILED for page {page_id+1}. Stopping search and returning {len(file_urls)} urls. Cause: {repr(e)}[/red]")
 						return file_urls
 						raise Exception("TODO")
 					else:
 						sleep_time = 1 + ((1+attempt) ** 2)
 						# Update the status spinner to show the warning!
-						if not SUPPRESS_WARNINGS: console.print(f"{prepadding}[yellow]Scraping attempt {attempt}/{MAX_DL_ATTEMPTS} FAILED for page {page_id+1}. Retrying in {sleep_time}s...[/yellow]")
+						if not SUPPRESS_WARNINGS: console.print(f"{PREPADDING}[yellow]Scraping attempt {attempt}/{MAX_DL_ATTEMPTS} FAILED for page {page_id+1}. Retrying in {sleep_time}s...[/yellow]")
 						await asyncio.sleep(sleep_time)
 			
 			# TERMINATION STATE
 			# Gelbooru limits you to page_id 0 to 200
 			if page_id==200:
-				if not SUPPRESS_WARNINGS: console.print(f"{prepadding}[yellow]Gathered Gelbooru limit of 20100 posts deep.[/yellow]")
+				if not SUPPRESS_WARNINGS: console.print(f"{PREPADDING}[yellow]Gathered Gelbooru limit of 20100 posts deep.[/yellow]")
 				break
 			# In case reach end and no urls are returned
 			if len(urls) == 0:
@@ -306,7 +306,7 @@ def remove_part_files(dir:pathlib.Path):
 	part_files = [*dir.glob("*.part")]
 	if len(part_files) == 0: return
 
-	log.info(f"{prepadding}[yellow]Found {len(part_files)} leftover .part files. Cleaning up...[/yellow]")
+	log.info(f"{PREPADDING}[yellow]Found {len(part_files)} leftover .part files. Cleaning up...[/yellow]")
 	for file_path in part_files:
 		try:
 			file_path.unlink()  # This deletes the file
@@ -376,13 +376,13 @@ def cli_entry():
 		log.info(
 			"\n[red]Missing [b]API CREDENTIALS[/b][/red]"
 			"\n[b]How to add your credentials:[/b]"
-			f"\n{prepadding}1. Log into your Gelbooru account in your web browser"
-			f"\n{prepadding}2. Go to [steel_blue1]Settings -> Options[/steel_blue1] (or visit: [steel_blue1]https://gelbooru.com/index.php?page=account&s=options[/steel_blue1])"
-			f"\n{prepadding}3. Scroll down to the very bottom. You should see [steel_blue1]API Access Credentials[/steel_blue1]"
-			f"\n{prepadding}4. There will be a long string of text like shown below. Copy the whole thing"
-			f"\n{prepadding}   [steel_blue1]&api_key=a1239798a7a98d7a9d87ad98wn798...(shortened for brevity's sake)...d09a8dn7w90d8w7and98a7wnd98an7w79&user_id=2001235 [/steel_blue1]"
-			f"\n{prepadding}5. Now run [green bold]gelbooru-dl -k \"PASTE_YOUR_STRING_HERE\"[/green bold]. [b yellow]You must add DOUBLE QUOTES(\") to [b]BOTH SIDES[/b] of your string or it will fail![/b yellow]"
-			f"\n{prepadding}Example: [green bold]gelbooru-dl -k \"&api_key=a1239798a7a98d7a9d87ad98wn798...(shortened for brevity's sake)...d09a8dn7w90d8w7and98a7wnd98an7w79&user_id=2001235\"[/green bold]"
+			f"\n{PREPADDING}1. Log into your Gelbooru account in your web browser"
+			f"\n{PREPADDING}2. Go to [steel_blue1]Settings -> Options[/steel_blue1] (or visit: [steel_blue1]https://gelbooru.com/index.php?page=account&s=options[/steel_blue1])"
+			f"\n{PREPADDING}3. Scroll down to the very bottom. You should see [steel_blue1]API Access Credentials[/steel_blue1]"
+			f"\n{PREPADDING}4. There will be a long string of text like shown below. Copy the whole thing"
+			f"\n{PREPADDING}   [steel_blue1]&api_key=a1239798a7a98d7a9d87ad98wn798...(shortened for brevity's sake)...d09a8dn7w90d8w7and98a7wnd98an7w79&user_id=2001235 [/steel_blue1]"
+			f"\n{PREPADDING}5. Now run [green bold]gelbooru-dl -k \"PASTE_YOUR_STRING_HERE\"[/green bold]. [b yellow]You must add DOUBLE QUOTES(\") to [b]BOTH SIDES[/b] of your string or it will fail![/b yellow]"
+			f"\n{PREPADDING}Example: [green bold]gelbooru-dl -k \"&api_key=a1239798a7a98d7a9d87ad98wn798...(shortened for brevity's sake)...d09a8dn7w90d8w7and98a7wnd98an7w79&user_id=2001235\"[/green bold]"
 		)
 		sys.exit(1)
 	API_CODES = key
