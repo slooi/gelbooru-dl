@@ -1,13 +1,10 @@
 import asyncio
 import logging
-import math
 from typing import Callable, Dict, List, Tuple, TypedDict
 from bs4 import BeautifulSoup
 import dotenv
 from requests import sessions
-import json
 from dotenv import dotenv_values
-import time
 import pathlib
 import os
 from rich.highlighter import NullHighlighter
@@ -17,7 +14,6 @@ from rich.progress import Progress, TaskID
 from rich.console import Console
 from requests.models import Response
 import aiohttp
-import time
 from rich.live import Live
 from rich.console import Group
 from rich.markup import escape
@@ -59,18 +55,10 @@ logging.basicConfig(
 
 log = logging.getLogger(__name__)
 
-# ----- SETUP VARS ----------------------------------------
 
-ENV_FILE_NAME = ".gelbooru-dl.env"
-ENV_PATH = pathlib.Path.home() / ENV_FILE_NAME
-console = Console()
-API_CODES = ""#config["API_CODES"]
-custom_timeout = aiohttp.ClientTimeout(total=None, sock_read=1)
+# ----- CONSTANTS ----------------------------------------
 
-# ----- MAIN CODE ----------------------------------------
-
-
-headers = {
+HEADERS = {
 	"Host": "img4.gelbooru.com",
 	"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:148.0) Gecko/20100101 Firefox/148.0",
 	"Accept": "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5",
@@ -86,16 +74,21 @@ headers = {
 	"Cache-Control": "no-cache"
 }
 
-s = sessions.Session()
-s.headers.update(headers)
+# ----- SETUP VARS ----------------------------------------
 
-	
+API_CODES = "" #config["API_CODES"]
+ENV_PATH = pathlib.Path.home() / ".gelbooru-dl.env"
+console = Console()
+custom_timeout = aiohttp.ClientTimeout(total=None, sock_read=1)
+
+s = sessions.Session()
+s.headers.update(HEADERS)	
 semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+
+# ----- MAIN CODE ----------------------------------------
+
 async def download_file(file_url:str,media_save_folder:pathlib.Path,successful_urls:List[str],aborted_urls:List[str],already_downloaded_urls:List[str],progress:Progress,main_task:TaskID,session:aiohttp.ClientSession):
 	filepath = media_save_folder / pathlib.Path(file_url).name
-	message = f"Downloading [steel_blue1]{file_url.replace("https://","")}[/steel_blue1] to [steel_blue1]{filepath.parent}[/steel_blue1]"
-
-	is_dling = False
 
 	async with semaphore:
 		file_task = None # Task for individual file progress
@@ -173,25 +166,22 @@ async def download_files(file_urls:List[str],_media_save_folder:pathlib.Path,ses
 
 	# cache
 	num_of_file_urls = len(file_urls)
-	indicator_width = len(str(num_of_file_urls))*2+1
 
 	successful_urls = []
 	aborted_urls = []
 	already_downloaded_urls = []
 
-	# 1. Create the Progress object WITHOUT a 'with' statement
+	# Create a group for a header and progress bars
+	header = f"{prepadding}Saving to: [steel_blue1]{media_save_folder}[/steel_blue1]"
 	progress = Progress(
 		TextColumn("[progress.description]{task.description}"),
 		BarColumn(),
 		TaskProgressColumn(),
 		TimeRemainingColumn(),
 	)
-	# 2. Create your Header string (No progress bar will be attached to this)
-	header = f"{prepadding}Saving to: [steel_blue1]{media_save_folder}[/steel_blue1]"
-	# 3. Group the header and the progress bars together
 	render_group = Group(header, progress)
 	
-	# 4. Use Live() to render the group. transient=True erases everything when done!
+	# Live() instead of progress for rendering of multiple pieces of info. transient=True erases everything when done!
 	with Live(render_group, console=console, transient=True):
 		main_task = progress.add_task(f"{prepadding} 0/{num_of_file_urls} downloaded | 0 aborted", total=num_of_file_urls)
 		
@@ -207,9 +197,9 @@ async def download_files(file_urls:List[str],_media_save_folder:pathlib.Path,ses
 			session=session
 		)) for i, file_url in enumerate(file_urls)]
 		await asyncio.gather(*atasks)
-			
 	
 
+	# DOWNLOAD FILES SUMMARY REPORT
 	SUMMARY_MESSAGE = (
 		f"{prepadding}"
 		"{symbol}Downloaded [{color}]{successful_downloads_num}[/{color}]/[steel_blue1]{total_url_num}[/steel_blue1] files"
@@ -308,7 +298,7 @@ async def get_posts_using_tags(tags:str,session:aiohttp.ClientSession) -> List[s
 			if total_number_of_posts is not None and len(file_urls) >= total_number_of_posts:
 				break
 
-			# Setup for next iteration
+			# SETUP FOR NEXT ITERATION
 			page_id+=1
 			await asyncio.sleep(0)
 
@@ -332,7 +322,7 @@ def remove_part_files(dir:pathlib.Path):
 # ----- CLI AND MAIN EXECUTION ----------------------------------------
 
 async def main(searchs_to_download: List[str], save_dir: pathlib.Path):
-	async with aiohttp.ClientSession(headers=headers) as session:
+	async with aiohttp.ClientSession(headers=HEADERS) as session:
 		for i, search in enumerate(searchs_to_download):
 
 			search = search.strip()
@@ -377,7 +367,7 @@ def cli_entry():
 	key = str(args.key).strip()
 	# Update/Add environment var if given
 	if key:
-		log.info(f"Saving credentials to : [steel_blue1]{pathlib.Path.home()/ENV_FILE_NAME}[/steel_blue1]")
+		log.info(f"Saving credentials to : [steel_blue1]{ENV_PATH}[/steel_blue1]")
 		if not ENV_PATH.exists(): ENV_PATH.touch()
 		if len(key)<150: 
 			if not SUPPRESS_WARNINGS: log.warning("[yellow]WARNING: Your credentials were shorter than expected, please double check you pasted your full API Access Credentials.[/yellow]")
