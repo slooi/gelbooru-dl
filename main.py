@@ -139,7 +139,10 @@ async def download_file(file_url:str,media_save_folder:pathlib.Path,successful_u
 			except Exception as e:
 				# Clean up .part file if it exists
 				if part_filepath and part_filepath.exists():
-					part_filepath.unlink() # Deletes the file
+					try: 
+						part_filepath.unlink() # Deletes the file
+					except Exception as e2:
+						if not SUPPRESS_WARNINGS: console.print(f"{prepadding}[yellow]COULD NOT DELETE TEMPORARY FILE: {filepath.name + ".part"}. Cause: {repr(e2)}[/yellow]")
 				
 				if download_attempt == MAX_DL_ATTEMPTS:
 					console.print(f"{prepadding}[red]Download attempt {download_attempt}/{MAX_DL_ATTEMPTS} FAILED for {file_url}. ABORTING DOWNLOAD. Cause: {repr(e)}[/red]")
