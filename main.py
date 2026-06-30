@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import os
 import sys
 import logging
@@ -7,7 +8,7 @@ import aiohttp
 import dotenv
 import pathlib
 import argparse
-from typing import List
+from typing import Awaitable, Callable, Dict, List, Literal, Optional, TypeVar, TypedDict
 from dotenv import dotenv_values
 from rich.highlighter import NullHighlighter
 from rich.logging import RichHandler
@@ -79,8 +80,174 @@ ENV_PATH = pathlib.Path.home() / ".gelbooru-dl.env"
 console = Console()
 custom_timeout = aiohttp.ClientTimeout(total=None, sock_read=1)
 
+T = TypeVar("T")
 
 # ----- MAIN CODE ----------------------------------------
+async def retry(operation: Callable[[], Awaitable[T]],attempts: int) -> T:
+	last_exception = None
+	for attempt in range(1, attempts + 1):
+		try:
+			return await operation()
+		except Exception as e:
+			last_exception = e
+			if attempt == attempts:  raise
+			await asyncio.sleep(1 + attempt ** 2)
+	raise last_exception or Exception("Unexpected error! This code should not be reached! Max retry attempts reached!")
+
+class DownloadProgress(TypedDict):
+	total_bytes: Optional[int]
+	progress: int
+
+class DownloadTracker:
+	def __init__(self):
+		self.downloads:Dict[str,DownloadProgress] = {}
+	def new_download(self,url:str,total_bytes:Optional[int]):
+		self.downloads[url] = {"total_bytes":total_bytes,"progress":0}
+		self.downloads[url]["total_bytes"] = total_bytes
+		# task = progress.add_task(f"{PREPADDING}  Downloading [steel_blue1]{url}[/steel_blue1]", total=file_size)
+		pass
+	def update(self,url:str,chunk_size:int):
+		self.downloads[url]["progress"] += chunk_size
+		# progress.update(task,advance=len(chunk))
+	def remove_download(self,url:str):
+		if url in self.downloads:
+			del self.downloads[url]
+		# progress.remove_task(task)
+
+async def _download_file_once(url:str,file_path:pathlib.Path,session:aiohttp.ClientSession,download_tracker:Optional[DownloadTracker]=None):
+	""" NOTICE THIS DOES NOT HAVE A TRY EXCEPT. THIS FUNCTION IS DESIGN TO BE CONSUMED """
+	async with session.get(url) as response:
+		file_size = int(response.headers.get("Content-Length",0)) or None
+		if download_tracker: download_tracker.new_download(url,file_size)
+		try:
+			file_path.parent.mkdir(exist_ok=True,parents=True)
+			tmp_file = file_path.with_suffix(file_path.suffix+".part")
+			async with aiofiles.open(tmp_file,"wb") as f:
+				async for chunk in response.content.iter_chunked(CHUNK_SIZE):
+					await f.write(chunk)
+					if download_tracker: download_tracker.update(url,len(chunk))
+			tmp_file.rename(file_path)
+		except Exception as e:
+			raise
+		finally:
+			if download_tracker: download_tracker.remove_download(url)
+		# !@#!@#!@# THIS MAY CAUSE ISSUES WHEN RENDERING WARNINGS!@#!@#!@#
+
+@dataclass
+class DownloadFileResult():
+	result:Literal["DOWNLOADED","ALREADY_EXISTED","FAILED"]
+	url:str
+	err:Optional[Exception]=None
+
+async def download_file2(url:str,file_path:pathlib.Path,semaphore:asyncio.Semaphore,session:aiohttp.ClientSession,download_tracker:Optional[DownloadTracker]) -> DownloadFileResult:
+	""" RETURNS `DownloadFileResult` """
+
+	# Return if file already exists
+	if file_path.exists(): return DownloadFileResult("ALREADY_EXISTED",url)
+	# Download if file doesn't exist
+	try:
+		async with semaphore:
+			await retry(lambda: _download_file_once(url,file_path,session,download_tracker),7)
+		return DownloadFileResult("DOWNLOADED",url)
+	except Exception as e:
+		return DownloadFileResult("FAILED",url,e)
+	
+
+@dataclass
+class DownloadAllFilesResult():
+	result:Literal["FULLY_SUCCESSFUL","PARTIALLY_SUCCESSFUL","FULLY_FAILED"]
+	download_reults:List[DownloadFileResult]
+
+async def download_all_files(urls:List[str],media_save_folder:pathlib.Path,semaphore:asyncio.Semaphore,session:aiohttp.ClientSession,download_tracker:Optional[DownloadTracker]=None):
+	results = await asyncio.gather(*[download_file2(url,media_save_folder/pathlib.Path(url).name,semaphore,session,download_tracker) for url in urls])
+	print("results",results)
+	
+	failed_downloads_len = len([result.url for result in results if result.result == "FAILED"])
+
+	# !@#!@#!@#!@# Should i make it fail if no urls are given as input? and why? Which would be MORE HELPFUL to the user?
+	if failed_downloads_len == 0: output_result = "FULLY_SUCCESSFUL"
+	elif failed_downloads_len == len(urls): output_result = "FULLY_FAILED"
+	else: output_result = "PARTIALLY_SUCCESSFUL"
+	
+
+	return DownloadAllFilesResult(output_result,results)
+
+class ProgressRenderer():
+	UPDATE_RATE = 0.02
+	def __init__(self,download_tracker:DownloadTracker,header:str,download_label_cb:Optional[Callable[[str],str]]=None):
+		# 
+		self._header = header
+		self._download_label_cb = download_label_cb
+		self._download_tracker = download_tracker
+
+		# 
+		self._progress = Progress(
+			TextColumn("[progress.description]{task.description}"),
+			BarColumn(),
+			TaskProgressColumn(),
+			TimeRemainingColumn(),
+		)
+		self._renderable = Group(self._header, self._progress)
+		self._live = Live(self._renderable, console=console, transient=True)
+		self._url_to_tasks:Dict[str,TaskID] = {}
+
+	def render(self):
+		# Delete tasks if they don't exist in download tracker
+		to_delete =[url for url in self._url_to_tasks if not url in self._download_tracker.downloads]
+		for url in to_delete:
+			self._progress.remove_task(self._url_to_tasks[url])
+			del self._url_to_tasks[url]
+
+		# Render all downloads
+		for url, download_progress in self._download_tracker.downloads.items():
+			# Create a rich task if it doesn't yet exist
+			if not url in self._url_to_tasks:
+				# f"{PREPADDING}Downloading {url}"
+				label = self._download_label_cb(url) if self._download_label_cb else f"Downloading {url}"
+				task = self._progress.add_task(label,total=download_progress["total_bytes"])
+				self._url_to_tasks[url] = task
+				return 
+			
+			# If it already exists update it
+			task = self._url_to_tasks[url]
+			self._progress.update(task,completed=download_progress["progress"],total=download_progress["total_bytes"])
+
+	async def run(self):
+		self._live.start()
+		try:
+			while True:
+				self.render()
+				self._live.refresh()
+				await asyncio.sleep(self.UPDATE_RATE)
+		finally:
+			self._live.stop()
+
+
+		
+
+async def my_downloader(urls:List[str],media_save_folder:pathlib.Path):
+
+	session = aiohttp.ClientSession(headers=HEADERS,timeout=custom_timeout)
+	semaphore = asyncio.Semaphore(8)
+	download_tracker = DownloadTracker()
+	# renderer = ProgressRenderer(f"{PREPADDING}Saving to: [steel_blue1]{media_save_folder}[/steel_blue1]",download_tracker)
+	renderer = ProgressRenderer(download_tracker,f"{PREPADDING}Saving to: [steel_blue1]{media_save_folder}[/steel_blue1]")
+
+	render_task = asyncio.create_task(renderer.run())  #idk when to use await, when to use async xD
+	try:
+		result = await download_all_files(urls,media_save_folder,semaphore,session,download_tracker)
+		print("result",result)
+	finally:
+		render_task.cancel()
+		await session.close()
+
+# urls = []
+# media_save_folder = pathlib.Path("ttt")
+# asyncio.run(my_downloader(urls,media_save_folder))
+
+
+
+
 
 async def download_file(file_url:str,media_save_folder:pathlib.Path,successful_urls:List[str],aborted_urls:List[str],already_downloaded_urls:List[str],progress:Progress,main_task:TaskID,session:aiohttp.ClientSession,semaphore:asyncio.Semaphore):
 	filepath = media_save_folder / pathlib.Path(file_url).name
@@ -321,16 +488,25 @@ def remove_part_files(dir:pathlib.Path):
 async def main(searchs_to_download: List[str], save_dir: pathlib.Path, concurrent_requests:int):
 	semaphore = asyncio.Semaphore(concurrent_requests)
 
-	async with aiohttp.ClientSession(headers=HEADERS) as session:
+	download_tracker = DownloadTracker()
+	async with aiohttp.ClientSession(headers=HEADERS,timeout=custom_timeout) as session:
 		for i, search in enumerate(searchs_to_download):
 
 			search = search.strip()
 			log.info(f"[[steel_blue1]{i+1}[/steel_blue1]/[steel_blue1]{len(searchs_to_download)}[/steel_blue1]] [steel_blue1]{search}[/steel_blue1]")
 			file_urls = await get_posts_using_tags(search,session=session)
 
+			# NEW CODE
 			media_save_folder = save_dir/search
-			await download_files(file_urls=file_urls,_media_save_folder=media_save_folder,session=session,semaphore=semaphore)
-			remove_part_files(media_save_folder)
+			renderer = ProgressRenderer(download_tracker,f"{PREPADDING}Saving to: [steel_blue1]{media_save_folder}[/steel_blue1]",lambda url: f"Downloading [steel_blue1]{url}[/steel_blue1]")
+			render_task = asyncio.create_task(renderer.run())
+			await download_all_files(file_urls,media_save_folder,semaphore,session,download_tracker)
+			render_task.cancel()
+
+			# OLD CODE 
+			# media_save_folder = save_dir/search
+			# await download_files(file_urls=file_urls,_media_save_folder=media_save_folder,session=session,semaphore=semaphore)
+			# remove_part_files(media_save_folder)
 
 def cli_entry():
 	"""This is the function triggered when you type 'gelbooru-dl' in the terminal."""
