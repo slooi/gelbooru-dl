@@ -4,7 +4,7 @@
 # Steps
 1) [Make a Gelbooru account](https://gelbooru.com/index.php?page=account&s=reg) (no email is required)
 2) Go to [your account options](https://gelbooru.com/index.php?page=account&s=options) and enable "Display all site content"
-3) Then scroll down and copy your `API Access Credentials`. It should look something like so: 
+3) Then scroll down and copy your `API Access Credentials`. It should be a long string something like so: 
 ```
 &api_key=a1239798a7a98d7a9d87ad98wn798a7dnaw987da9d8aw7d0a98nd7aw09d8wa7d0a9w8nd7aw908da7nd09a8dn7w90d8w7and98a7wnd98an7w79&user_id=2001235
 ```
@@ -34,3 +34,6 @@ Note: `<TAGS>` MUST be formatted following Gelbooru's URL tagging conventions. T
 ```gelbooru-dl suzumiya_haruhi+black_hair nagato_yuki```
 - This will only download posts containg BOTH `suzumiya_haruhi` and `black_hair` tags
 - Then after the above is done, it will download posts with the `nagato_yuki` tag
+
+# Installation
+`python -m pip install aiohttp python-dotenv rich aiofiles`
